@@ -224,10 +224,10 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-file-earmark-code"></i> HTML Отчет</h5>
                 <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-secondary" onclick="toggleFullscreen()">
+                    <button class="btn btn-outline-secondary" onclick="toggleFullscreen()" id="fullscreenBtn">
                         <i class="bi bi-fullscreen"></i> Полный экран
                     </button>
-                    <button class="btn btn-outline-secondary" onclick="downloadHTML()">
+                    <button class="btn btn-outline-secondary" onclick="downloadHTML()" id="downloadHTMLBtn">
                         <i class="bi bi-download"></i> Скачать HTML
                     </button>
                 </div>
@@ -549,14 +549,25 @@ function toggleFullscreen() {
     const fullscreenContent = document.getElementById('fullscreenContent');
     const htmlContent = document.getElementById('htmlContent');
     
+    if (!htmlContent) {
+        alert('HTML контент недоступен для просмотра в полном экране');
+        return;
+    }
+    
     fullscreenContent.innerHTML = htmlContent.innerHTML;
     modal.show();
 }
 
 // Download HTML report
 function downloadHTML() {
-    const htmlContent = document.getElementById('htmlContent').innerHTML;
-    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const htmlContent = document.getElementById('htmlContent');
+    
+    if (!htmlContent) {
+        alert('HTML контент недоступен для скачивания');
+        return;
+    }
+    
+    const blob = new Blob([htmlContent.innerHTML], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -585,13 +596,29 @@ function copyError() {
     });
 }
 
-// Initialize view toggle buttons
+// Initialize view toggle buttons and HTML buttons
 document.addEventListener('DOMContentLoaded', function() {
     const gridBtn = document.getElementById('gridViewBtn');
     const listBtn = document.getElementById('listViewBtn');
     
     if (gridBtn && listBtn) {
         listBtn.classList.add('active');
+    }
+    
+    // Initialize HTML buttons
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const downloadHTMLBtn = document.getElementById('downloadHTMLBtn');
+    const htmlContent = document.getElementById('htmlContent');
+    
+    if (fullscreenBtn && downloadHTMLBtn && htmlContent) {
+        // Buttons are already enabled by default when HTML content exists
+        console.log('HTML content available, buttons enabled');
+    } else if (fullscreenBtn && downloadHTMLBtn) {
+        // Disable buttons if HTML content is not available
+        fullscreenBtn.disabled = true;
+        downloadHTMLBtn.disabled = true;
+        fullscreenBtn.title = 'HTML контент недоступен';
+        downloadHTMLBtn.title = 'HTML контент недоступен';
     }
 });
 </script>
