@@ -1,0 +1,176 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <NAMESPACE>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: juport
+  namespace: <NAMESPACE>
+  labels:
+    app: juport
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: juport
+  template:
+    metadata:
+      labels:
+        app: juport
+    spec:
+      containers:
+      # Main Juport application
+      - name: juport
+        image: <JUPORT_IMAGE>
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: juport
+              key: database-url
+        - name: JUPYTER_NOTEBOOKS_PATH
+          value: "/app/data/notebooks"
+        - name: JUPYTER_OUTPUT_PATH
+          value: "/app/data/outputs"
+        - name: DEBUG
+          value: "false"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8000"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: juport
+              key: secret-key
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      
+      # Jupyter Lab sidecar
+      - name: jupyter-lab
+        image: <JUPYTER_IMAGE>
+        ports:
+        - containerPort: 8888
+        env:
+        - name: JUPYTER_ENABLE_LAB
+          value: "yes"
+        - name: JUPYTER_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: juport
+              key: jupyter-token
+        - name: JUPYTER_PASSWORD
+          value: ""
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /home/jovyan/work/data
+        command: ["start-notebook.sh"]
+        args:
+        - "--NotebookApp.token=$(JUPYTER_TOKEN)"
+        - "--NotebookApp.password=''"
+        - "--NotebookApp.open_browser=False"
+        - "--NotebookApp.ip=0.0.0.0"
+        - "--NotebookApp.allow_root=True"
+        - "--NotebookApp.notebook_dir=/home/jovyan/work"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /lab
+            port: 8888
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /lab
+            port: 8888
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: juport-shared-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: juport-shared-pvc
+  namespace: <NAMESPACE>
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "nfs"
+  resources:
+    requests:
+      storage: 15Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: juport-service
+  namespace: <NAMESPACE>
+  labels:
+    app: juport
+spec:
+  selector:
+    app: juport
+  ports:
+  - name: juport-http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  - name: jupyter-http
+    port: 8888
+    targetPort: 8888
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: juport-ingress
+  namespace: <NAMESPACE>
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  rules:
+  - host: <INGRESS_HOST>
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: juport-service
+            port:
+              number: 80

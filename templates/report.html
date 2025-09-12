@@ -33,7 +33,7 @@
                                 {% if report.is_active %}Активен{% else %}Неактивен{% endif %}
                             </span>
                         </p>
-                        <p><strong>Расписание:</strong> <code>{{ report.schedule_cron }}</code></p>
+                        <p><strong>Расписание:</strong> <code>{{ report.schedule_cron or 'Не настроено' }}</code></p>
                     </div>
                     <div class="col-md-6">
                         <p><strong>Путь к ноутбуку:</strong> <code>{{ report.notebook_path }}</code></p>
@@ -184,7 +184,7 @@ function executeReport(reportId) {
         document.getElementById('executionStatus').innerHTML = `
             <div class="alert alert-success">
                 <i class="bi bi-check-circle"></i> ${data.message}
-                <br><small>ID выполнения: ${data.execution_id}</small>
+                <br><small>ID задачи: ${data.task_id}</small>
             </div>
         `;
         setTimeout(() => {

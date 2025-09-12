@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block title %}Управление расписаниями - Juport{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Управление расписаниями</h1>
+                <div>
+                    <a href="/" class="btn btn-secondary me-2">Назад к отчетам</a>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createScheduleModal">
+                        <i class="fas fa-plus"></i> Создать расписание
+                    </button>
+                </div>
+            </div>
+
+            {% if schedules %}
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Название</th>
+                                    <th>Отчет</th>
+                                    <th>Расписание</th>
+                                    <th>Статус</th>
+                                    <th>Последний запуск</th>
+                                    <th>Следующий запуск</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for schedule in schedules %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ schedule.name }}</strong>
+                                        {% if schedule.description %}
+                                        <br><small class="text-muted">{{ schedule.description }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="/report/{{ schedule.report.id }}" class="text-decoration-none">
+                                            {{ schedule.report.name }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <code>{{ schedule.cron_expression }}</code>
+                                        <br><small class="text-muted">{{ schedule.timezone }}</small>
+                                    </td>
+                                    <td>
+                                        {% if schedule.is_active %}
+                                        <span class="badge bg-success">Активно</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Неактивно</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if schedule.last_run %}
+                                        {{ schedule.last_run.strftime('%d.%m.%Y %H:%M') }}
+                                        {% else %}
+                                        <span class="text-muted">Никогда</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if schedule.next_run %}
+                                        {{ schedule.next_run.strftime('%d.%m.%Y %H:%M') }}
+                                        {% else %}
+                                        <span class="text-muted">Не запланировано</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="/schedule/{{ schedule.id }}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <button class="btn btn-sm btn-outline-success" onclick="executeSchedule({{ schedule.id }})">
+                                                <i class="fas fa-play"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-warning" onclick="toggleSchedule({{ schedule.id }}, {{ schedule.is_active|lower }})">
+                                                <i class="fas fa-{% if schedule.is_active %}pause{% else %}play{% endif %}"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSchedule({{ schedule.id }})">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                <h4>Расписания не найдены</h4>
+                <p>Создайте первое расписание для автоматического выполнения отчетов.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Create Schedule Modal -->
+<div class="modal fade" id="createScheduleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Создать расписание</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="createScheduleForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="scheduleName" class="form-label">Название расписания</label>
+                        <input type="text" class="form-control" id="scheduleName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="scheduleDescription" class="form-label">Описание</label>
+                        <textarea class="form-control" id="scheduleDescription" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="scheduleReport" class="form-label">Отчет</label>
+                        <select class="form-select" id="scheduleReport" required>
+                            <option value="">Выберите отчет</option>
+                            <!-- Reports will be loaded via JavaScript -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cronExpression" class="form-label">Cron выражение</label>
+                        <input type="text" class="form-control" id="cronExpression" placeholder="0 9 * * *" required>
+                        <div class="form-text">
+                            Примеры: <code>0 9 * * *</code> (каждый день в 9:00), 
+                            <code>0 8 * * 1</code> (каждый понедельник в 8:00),
+                            <code>0 */6 * * *</code> (каждые 6 часов)
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="timezone" class="form-label">Часовой пояс</label>
+                        <select class="form-select" id="timezone">
+                            <option value="UTC">UTC (GMT+0)</option>
+                            <option value="Etc/GMT+12">GMT-12 (Baker Island)</option>
+                            <option value="Etc/GMT+11">GMT-11 (American Samoa)</option>
+                            <option value="Etc/GMT+10">GMT-10 (Hawaii)</option>
+                            <option value="Etc/GMT+9">GMT-9 (Alaska)</option>
+                            <option value="Etc/GMT+8">GMT-8 (Pacific Time)</option>
+                            <option value="Etc/GMT+7">GMT-7 (Mountain Time)</option>
+                            <option value="Etc/GMT+6">GMT-6 (Central Time)</option>
+                            <option value="Etc/GMT+5">GMT-5 (Eastern Time)</option>
+                            <option value="Etc/GMT+4">GMT-4 (Atlantic Time)</option>
+                            <option value="Etc/GMT+3">GMT-3 (Argentina)</option>
+                            <option value="Etc/GMT+2">GMT-2 (Mid-Atlantic)</option>
+                            <option value="Etc/GMT+1">GMT-1 (Azores)</option>
+                            <option value="Etc/GMT-1">GMT+1 (Central European Time)</option>
+                            <option value="Etc/GMT-2">GMT+2 (Eastern European Time)</option>
+                            <option value="Etc/GMT-3">GMT+3 (Moscow Time)</option>
+                            <option value="Etc/GMT-4">GMT+4 (Gulf Time)</option>
+                            <option value="Etc/GMT-5">GMT+5 (Pakistan)</option>
+                            <option value="Etc/GMT-6">GMT+6 (Bangladesh)</option>
+                            <option value="Etc/GMT-7">GMT+7 (Indochina)</option>
+                            <option value="Etc/GMT-8">GMT+8 (China)</option>
+                            <option value="Etc/GMT-9">GMT+9 (Japan)</option>
+                            <option value="Etc/GMT-10">GMT+10 (Australia Eastern)</option>
+                            <option value="Etc/GMT-11">GMT+11 (Solomon Islands)</option>
+                            <option value="Etc/GMT-12">GMT+12 (New Zealand)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="isActive" checked>
+                            <label class="form-check-label" for="isActive">
+                                Активно
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Создать расписание</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load reports for the select dropdown
+async function loadReports() {
+    try {
+        const response = await fetch('/api/reports');
+        const reports = await response.json();
+        const select = document.getElementById('scheduleReport');
+        
+        reports.forEach(report => {
+            const option = document.createElement('option');
+            option.value = report.id;
+            option.textContent = report.name;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading reports:', error);
+    }
+}
+
+// Create schedule
+document.getElementById('createScheduleForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = {
+        name: document.getElementById('scheduleName').value,
+        description: document.getElementById('scheduleDescription').value,
+        report_id: parseInt(document.getElementById('scheduleReport').value),
+        cron_expression: document.getElementById('cronExpression').value,
+        timezone: document.getElementById('timezone').value,
+        is_active: document.getElementById('isActive').checked
+    };
+    
+    try {
+        const response = await fetch('/api/schedules', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Ошибка создания расписания: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error creating schedule:', error);
+        alert('Ошибка создания расписания');
+    }
+});
+
+// Execute schedule
+async function executeSchedule(scheduleId) {
+    if (!confirm('Запустить расписание сейчас?')) return;
+    
+    try {
+        const response = await fetch(`/api/schedules/${scheduleId}/execute`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            alert('Расписание запущено');
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Ошибка запуска расписания: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error executing schedule:', error);
+        alert('Ошибка запуска расписания');
+    }
+}
+
+// Toggle schedule
+async function toggleSchedule(scheduleId, isActive) {
+    try {
+        const response = await fetch(`/api/schedules/${scheduleId}/toggle`, {
+            method: 'PUT'
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Ошибка изменения статуса расписания: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error toggling schedule:', error);
+        alert('Ошибка изменения статуса расписания');
+    }
+}
+
+// Delete schedule
+async function deleteSchedule(scheduleId) {
+    if (!confirm('Удалить расписание? Это действие нельзя отменить.')) return;
+    
+    try {
+        const response = await fetch(`/api/schedules/${scheduleId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Ошибка удаления расписания: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error deleting schedule:', error);
+        alert('Ошибка удаления расписания');
+    }
+}
+
+// Load reports when modal is shown
+document.getElementById('createScheduleModal').addEventListener('show.bs.modal', loadReports);
+</script>
+{% endblock %}

@@ -152,6 +152,7 @@ Thumbs.db
 notebooks/
 outputs/
 examples/
+app/data/
 
 # Но оставляем примеры в git, исключаем только временные файлы
 !examples/*.ipynb

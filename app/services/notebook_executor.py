@@ -51,6 +51,13 @@ class NotebookExecutor:
         if not full_notebook_path.exists():
             raise FileNotFoundError(f"Notebook not found: {full_notebook_path}")
         
+        # Auto-detect artifacts if config is empty
+        if not artifacts_config or not artifacts_config.get("files"):
+            detected_config = self._detect_artifacts_from_notebook(full_notebook_path)
+            if detected_config.get("files"):
+                artifacts_config = detected_config
+                logger.info(f"Auto-detected artifacts for notebook {notebook_path}: {[f['name'] for f in artifacts_config['files']]}")
+        
         # Create a temporary copy of the notebook with warning suppression
         temp_notebook_path = self._create_notebook_with_warnings_suppressed(full_notebook_path)
         
@@ -96,7 +103,7 @@ class NotebookExecutor:
             
             logger.info(f"Running command: {' '.join(cmd)}")
             
-            # Run the command
+            # Run the command in the notebooks directory so files are created there
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 env=env,
@@ -112,20 +119,21 @@ class NotebookExecutor:
                 logger.error(f"Notebook execution failed: {error_msg}")
                 raise RuntimeError(f"Notebook execution failed: {error_msg}")
             
-            # Collect artifacts from both temporary directory and notebooks directory
-            artifacts = self._collect_artifacts(temp_execution_dir, artifacts_config)
+            # Collect artifacts from notebooks directory first (where notebook was executed)
+            artifacts = self._collect_artifacts(self.notebooks_path, artifacts_config)
             
-            # Also collect artifacts from notebooks directory (where notebook was executed)
-            notebook_artifacts = self._collect_artifacts(self.notebooks_path, artifacts_config)
+            # Also collect artifacts from temporary directory
+            temp_artifacts = self._collect_artifacts(temp_execution_dir, artifacts_config)
             
-            # Merge artifacts, avoiding duplicates
-            for artifact in notebook_artifacts:
+            # Merge artifacts from temp directory, avoiding duplicates
+            for artifact in temp_artifacts:
                 if not any(art["name"] == artifact["name"] for art in artifacts):
                     artifacts.append(artifact)
             
             # Copy all generated files to permanent report directory
             final_artifacts = []
             final_html_path = None
+            files_to_cleanup = []  # Track files that need cleanup
             
             for artifact in artifacts:
                 source_path = Path(artifact["path"])
@@ -137,26 +145,36 @@ class NotebookExecutor:
                     final_filename = f"{file_stem}{timestamp_suffix}{file_extension}"
                     final_path = report_output_dir / final_filename
                     
-                    # Copy file to permanent location
-                    shutil.copy2(source_path, final_path)
-                    
-                    # Update artifact info
-                    final_artifact = artifact.copy()
-                    final_artifact["path"] = str(final_path)
-                    final_artifact["name"] = final_filename
-                    final_artifacts.append(final_artifact)
-                    
-                    # Track HTML file
-                    if source_path.suffix == ".html":
-                        final_html_path = str(final_path)
-                    
-                    # Clean up source file if it's in notebooks directory (not temp directory)
-                    if str(source_path).startswith(str(self.notebooks_path)) and source_path.suffix != ".ipynb":
-                        try:
-                            source_path.unlink()
-                            logger.info(f"Cleaned up generated file: {source_path}")
-                        except Exception as e:
-                            logger.warning(f"Failed to clean up file {source_path}: {e}")
+                    try:
+                        # Copy file to permanent location
+                        shutil.copy2(source_path, final_path)
+                        logger.info(f"Copied artifact: {source_path} -> {final_path}")
+                        
+                        # Update artifact info
+                        final_artifact = artifact.copy()
+                        final_artifact["path"] = str(final_path)
+                        final_artifact["name"] = final_filename
+                        final_artifacts.append(final_artifact)
+                        
+                        # Track HTML file
+                        if source_path.suffix == ".html":
+                            final_html_path = str(final_path)
+                        
+                        # Mark for cleanup if it's in notebooks directory (not temp directory)
+                        if str(source_path).startswith(str(self.notebooks_path)) and source_path.suffix != ".ipynb":
+                            files_to_cleanup.append(source_path)
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to copy artifact {source_path}: {e}")
+                        # Don't add to final_artifacts if copy failed
+            
+            # Clean up source files after successful copying
+            for source_path in files_to_cleanup:
+                try:
+                    source_path.unlink()
+                    logger.info(f"Cleaned up generated file: {source_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up file {source_path}: {e}")
             
             # Prepare result
             result = {
@@ -233,6 +251,65 @@ class NotebookExecutor:
         
         return Path(temp_path)
     
+    def _detect_artifacts_from_notebook(self, notebook_path: Path) -> Dict[str, Any]:
+        """
+        Detect expected artifacts from notebook content.
+        
+        Args:
+            notebook_path: Path to the notebook file
+            
+        Returns:
+            Dictionary with detected artifacts configuration
+        """
+        import json
+        import re
+        
+        artifacts_config = {"files": []}
+        
+        try:
+            with open(notebook_path, 'r', encoding='utf-8') as f:
+                notebook = json.load(f)
+            
+            # Search for file output patterns in notebook cells
+            file_patterns = [
+                r'\.to_excel\([\'"]([^\'"]+)[\'"]\)',  # pandas to_excel
+                r'\.to_csv\([\'"]([^\'"]+)[\'"]\)',    # pandas to_csv
+                r'\.savefig\([\'"]([^\'"]+)[\'"]\)',   # matplotlib savefig
+                r'open\([\'"]([^\'"]+)[\'"]',          # file open
+                r'with open\([\'"]([^\'"]+)[\'"]',     # with open
+            ]
+            
+            for cell in notebook.get("cells", []):
+                if cell.get("cell_type") == "code":
+                    source = cell.get("source", [])
+                    cell_text = "".join(source)
+                    
+                    for pattern in file_patterns:
+                        matches = re.findall(pattern, cell_text)
+                        for match in matches:
+                            if match and not match.startswith("/") and not match.startswith("http"):
+                                artifacts_config["files"].append({
+                                    "name": match,
+                                    "type": "file",
+                                    "description": f"Generated file detected from notebook"
+                                })
+            
+            # Remove duplicates
+            seen = set()
+            unique_files = []
+            for file_config in artifacts_config["files"]:
+                if file_config["name"] not in seen:
+                    seen.add(file_config["name"])
+                    unique_files.append(file_config)
+            artifacts_config["files"] = unique_files
+            
+            logger.info(f"Detected {len(artifacts_config['files'])} artifacts from notebook: {[f['name'] for f in artifacts_config['files']]}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to detect artifacts from notebook {notebook_path}: {e}")
+        
+        return artifacts_config
+    
     def _collect_artifacts(
         self, 
         output_dir: Path, 
@@ -250,7 +327,7 @@ class NotebookExecutor:
         """
         artifacts = []
         
-        # Look for configured artifacts
+        # Look for configured artifacts first
         if "files" in artifacts_config:
             for file_config in artifacts_config["files"]:
                 file_path = output_dir / file_config["name"]
@@ -262,10 +339,18 @@ class NotebookExecutor:
                         "description": file_config.get("description", "")
                     })
         
-        # Also look for common output files (Excel, CSV, HTML, etc.)
-        common_patterns = ["*.xlsx", "*.xls", "*.csv", "*.json", "*.pdf", "*.html"]
+        # Look for common output files (Excel, CSV, HTML, etc.)
+        # This includes files that might not be in the config
+        common_patterns = ["*.xlsx", "*.xls", "*.csv", "*.json", "*.pdf", "*.html", "*.png", "*.jpg", "*.jpeg"]
         for pattern in common_patterns:
             for file_path in output_dir.glob(pattern):
+                # Skip notebook files and HTML files that are not reports
+                if file_path.suffix == ".ipynb":
+                    continue
+                if file_path.suffix == ".html" and "temp_" in file_path.name:
+                    continue
+                    
+                # Check if we already have this artifact
                 if not any(art["path"] == str(file_path) for art in artifacts):
                     artifacts.append({
                         "name": file_path.name,
@@ -273,6 +358,12 @@ class NotebookExecutor:
                         "type": "file",
                         "description": f"Generated {file_path.suffix[1:].upper()} file"
                     })
+        
+        # Log found artifacts for debugging
+        if artifacts:
+            logger.info(f"Found {len(artifacts)} artifacts in {output_dir}: {[a['name'] for a in artifacts]}")
+        else:
+            logger.warning(f"No artifacts found in {output_dir}")
         
         return artifacts
     

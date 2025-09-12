@@ -15,7 +15,13 @@ from app.routes.reports import ReportsController
 from app.routes.notebooks import NotebooksController
 from app.routes.web import WebController
 from app.routes.files import FilesController
+from app.routes.schedules import SchedulesController
+from app.routes.tasks import TasksController
+from app.routes.auth import AuthController
+from app.middleware.auth import AuthMiddleware
+from litestar.middleware.base import DefineMiddleware
 from app.scheduler import scheduler
+from app.worker import task_worker
 
 # Configure logging
 logging.basicConfig(
@@ -54,6 +60,9 @@ async def lifespan(app: Litestar):
     # Start scheduler
     await scheduler.start()
     
+    # Start task worker
+    await task_worker.start()
+    
     logger.info("Application started successfully")
     
     yield
@@ -61,6 +70,7 @@ async def lifespan(app: Litestar):
     # Shutdown
     logger.info("Shutting down Juport application...")
     await scheduler.stop()
+    await task_worker.stop()
     await engine.dispose()
     logger.info("Application shutdown complete")
 
@@ -87,16 +97,20 @@ template_config = TemplateConfig(
 # Create application
 app = Litestar(
     route_handlers=[
+        AuthController,
         WebController,
         ReportsController,
         NotebooksController,
         FilesController,
+        SchedulesController,
+        TasksController,
     ],
     dependencies={"db_session": get_db_session},
     cors_config=cors_config,
     static_files_config=[static_files_config],
     template_config=template_config,
     lifespan=[lifespan],
+    middleware=[DefineMiddleware(AuthMiddleware)],
     debug=settings.debug,
 )
 

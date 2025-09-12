@@ -8,8 +8,8 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1><i class="bi bi-file-earmark-text"></i> Отчеты</h1>
             <div>
-                <button class="btn btn-outline-warning me-2" onclick="cleanupTempReports()">
-                    <i class="bi bi-trash"></i> Очистить временные
+                <button class="btn btn-outline-warning me-2" onclick="cleanupOldReports()">
+                    <i class="bi bi-trash"></i> Очистить старые
                 </button>
                 <button class="btn btn-primary" onclick="location.reload()">
                     <i class="bi bi-arrow-clockwise"></i> Обновить
@@ -18,53 +18,70 @@
         </div>
 
         {% if reports %}
-            <div class="row">
-                {% for report in reports %}
-                <div class="col-md-6 col-lg-4 mb-4">
-                    <div class="card report-card h-100">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">{{ report.name }}</h5>
-                            <span class="badge {% if report.is_active %}bg-success{% else %}bg-secondary{% endif %}">
-                                {% if report.is_active %}Активен{% else %}Неактивен{% endif %}
-                            </span>
-                        </div>
-                        <div class="card-body">
-                            {% if report.description %}
-                                <p class="card-text text-muted">{{ report.description }}</p>
-                            {% endif %}
-                            
-                            <div class="mb-3">
-                                <small class="text-muted">
-                                    <i class="bi bi-clock"></i> Расписание: {{ report.schedule_cron }}
-                                </small>
-                            </div>
-                            
-                            <div class="mb-3">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Название</th>
+                            <th>Описание</th>
+                            <th>Статус</th>
+                            <th>Ноутбук</th>
+                            <th>Последнее выполнение</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for report in reports %}
+                        <tr>
+                            <td>
+                                <strong>{{ report.name }}</strong>
+                            </td>
+                            <td>
+                                {% if report.description %}
+                                    <span class="text-muted">{{ report.description }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge {% if report.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {% if report.is_active %}Активен{% else %}Неактивен{% endif %}
+                                </span>
+                            </td>
+                            <td>
                                 <small class="text-muted">
                                     <i class="bi bi-file-code"></i> {{ report.notebook_path }}
                                 </small>
-                            </div>
-                            
-                            <div class="mb-3">
+                            </td>
+                            <td>
                                 <small class="text-muted">
-                                    <i class="bi bi-calendar3"></i> Создан: {{ report.created_at.strftime('%d.%m.%Y %H:%M') }}
+                                    {% if report.executions %}
+                                        {% set last_execution = report.executions | sort(attribute='completed_at', reverse=true) | first %}
+                                        {% if last_execution and last_execution.completed_at %}
+                                            <i class="bi bi-calendar-check"></i> {{ last_execution.completed_at.strftime('%d.%m.%Y %H:%M') }}
+                                        {% else %}
+                                            <i class="bi bi-hourglass-split"></i> В процессе
+                                        {% endif %}
+                                    {% else %}
+                                        <i class="bi bi-dash-circle"></i> Не выполнялся
+                                    {% endif %}
                                 </small>
-                            </div>
-                        </div>
-                        <div class="card-footer">
-                            <div class="d-flex gap-2">
-                                <a href="/report/{{ report.id }}" class="btn btn-outline-primary btn-sm flex-fill">
-                                    <i class="bi bi-eye"></i> Просмотр
-                                </a>
-                                <button class="btn btn-outline-success btn-sm" 
-                                        onclick="executeReport({{ report.id }})">
-                                    <i class="bi bi-play"></i> Запустить
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="/report/{{ report.id }}" class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-eye"></i> Просмотр
+                                    </a>
+                                    <button class="btn btn-outline-success btn-sm" 
+                                            onclick="executeReport({{ report.id }})">
+                                        <i class="bi bi-play"></i> Запустить
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         {% else %}
             <div class="text-center py-5">
@@ -105,12 +122,12 @@
 
 {% block scripts %}
 <script>
-function cleanupTempReports() {
-    if (!confirm('Удалить все временные отчеты старше 24 часов?')) {
+function cleanupOldReports() {
+    if (!confirm('Удалить все старые отчеты без выполнений старше 7 дней?')) {
         return;
     }
     
-    fetch('/api/reports/cleanup-temp', {
+    fetch('/api/reports/cleanup-old', {
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json',
@@ -118,7 +135,7 @@ function cleanupTempReports() {
     })
     .then(response => response.json())
     .then(data => {
-        alert(`Очищено временных отчетов: ${data.deleted_count}`);
+        alert(`Очищено старых отчетов: ${data.deleted_count}`);
         location.reload();
     })
     .catch(error => {
@@ -148,7 +165,7 @@ function executeReport(reportId) {
         document.getElementById('executionStatus').innerHTML = `
             <div class="alert alert-success">
                 <i class="bi bi-check-circle"></i> ${data.message}
-                <br><small>ID выполнения: ${data.execution_id}</small>
+                <br><small>ID задачи: ${data.task_id}</small>
                 <br><small>Обновляем список выполнений...</small>
             </div>
         `;
