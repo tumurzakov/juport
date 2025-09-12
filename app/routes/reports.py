@@ -38,7 +38,7 @@ class ReportsController(Controller):
         include_executions: bool = Parameter(default=False)
     ) -> List[Union[ReportResponse, ReportWithExecutions]]:
         """Get list of reports."""
-        query = select(Report).order_by(desc(Report.created_at)).offset(offset).limit(limit)
+        query = select(Report).where(~Report.name.startswith("temp_")).order_by(desc(Report.created_at)).offset(offset).limit(limit)
         
         if include_executions:
             query = query.options(
@@ -267,3 +267,33 @@ class ReportsController(Controller):
                 await db_session.commit()
             
             raise ValidationException(detail=f"Failed to execute report: {str(e)}")
+    
+    @delete("/cleanup-temp", status_code=200)
+    async def cleanup_temp_reports(
+        self,
+        db_session: AsyncSession
+    ) -> dict:
+        """Clean up temporary reports older than 24 hours."""
+        from datetime import timedelta
+        
+        # Delete temporary reports older than 24 hours
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        
+        result = await db_session.execute(
+            select(Report)
+            .where(Report.name.startswith("temp_"))
+            .where(Report.created_at < cutoff_time)
+        )
+        temp_reports = result.scalars().all()
+        
+        deleted_count = 0
+        for report in temp_reports:
+            await db_session.delete(report)
+            deleted_count += 1
+        
+        await db_session.commit()
+        
+        return {
+            "message": f"Cleaned up {deleted_count} temporary reports",
+            "deleted_count": deleted_count
+        }
