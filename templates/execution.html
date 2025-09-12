@@ -386,6 +386,133 @@
 <script>
 let currentPreviewFile = null;
 
+// Define global functions for this page
+window.printPDF = function() {
+    const htmlContent = document.getElementById('htmlContent');
+    
+    if (!htmlContent) {
+        alert('HTML контент недоступен для печати');
+        return;
+    }
+    
+    // Create a new window with print-optimized content
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    
+    // Get execution data from the page
+    const executionData = {
+        reportName: document.querySelector('[data-report-name]')?.dataset.reportName || 'Отчет',
+        executionId: document.querySelector('[data-execution-id]')?.dataset.executionId || 'N/A',
+        startedAt: document.querySelector('[data-started-at]')?.dataset.startedAt || 'N/A',
+        completedAt: document.querySelector('[data-completed-at]')?.dataset.completedAt || null
+    };
+    
+    // Create print-optimized HTML using document.write
+    printWindow.document.open();
+    printWindow.document.write('<!DOCTYPE html>');
+    printWindow.document.write('<html lang="ru">');
+    printWindow.document.write('<head>');
+    printWindow.document.write('<meta charset="UTF-8">');
+    printWindow.document.write('<meta name="viewport" content="width=device-width, initial-scale=1.0">');
+    printWindow.document.write('<title>' + executionData.reportName + ' - Печать PDF</title>');
+    printWindow.document.write('<style>');
+    printWindow.document.write('* { margin: 0; padding: 0; box-sizing: border-box; }');
+    printWindow.document.write('body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; color: #333; background: white; padding: 20px; }');
+    printWindow.document.write('@media print { body { padding: 0; margin: 0; } .no-print { display: none !important; } .page-break { page-break-before: always; } img { max-width: 100% !important; height: auto !important; } table { page-break-inside: avoid; width: 100% !important; } pre, code { white-space: pre-wrap !important; word-wrap: break-word !important; } }');
+    printWindow.document.write('.print-header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #333; }');
+    printWindow.document.write('.print-header h1 { font-size: 24px; margin-bottom: 10px; color: #333; }');
+    printWindow.document.write('.print-header .meta { font-size: 14px; color: #666; }');
+    printWindow.document.write('.print-content { font-size: 12px; line-height: 1.4; }');
+    printWindow.document.write('.print-content h1, .print-content h2, .print-content h3 { margin-top: 20px; margin-bottom: 10px; color: #333; }');
+    printWindow.document.write('.print-content h1 { font-size: 18px; }');
+    printWindow.document.write('.print-content h2 { font-size: 16px; }');
+    printWindow.document.write('.print-content h3 { font-size: 14px; }');
+    printWindow.document.write('.print-content p { margin-bottom: 10px; }');
+    printWindow.document.write('.print-content table { border-collapse: collapse; width: 100%; margin: 15px 0; }');
+    printWindow.document.write('.print-content th, .print-content td { border: 1px solid #ddd; padding: 8px; text-align: left; }');
+    printWindow.document.write('.print-content th { background-color: #f5f5f5; font-weight: bold; }');
+    printWindow.document.write('.print-content pre { background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 10px; margin: 10px 0; overflow-x: auto; }');
+    printWindow.document.write('.print-content code { background-color: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-family: "Courier New", monospace; }');
+    printWindow.document.write('.print-actions { position: fixed; top: 10px; right: 10px; z-index: 1000; }');
+    printWindow.document.write('.print-actions button { background: #007bff; color: white; border: none; padding: 10px 15px; margin: 0 5px; border-radius: 4px; cursor: pointer; font-size: 14px; }');
+    printWindow.document.write('.print-actions button:hover { background: #0056b3; }');
+    printWindow.document.write('</style>');
+    printWindow.document.write('</head>');
+    printWindow.document.write('<body>');
+    printWindow.document.write('<div class="print-actions no-print">');
+    printWindow.document.write('<button onclick="window.print()">Печать</button>');
+    printWindow.document.write('<button onclick="window.close()">Закрыть</button>');
+    printWindow.document.write('</div>');
+    printWindow.document.write('<div class="print-header">');
+    printWindow.document.write('<h1>' + executionData.reportName + '</h1>');
+    printWindow.document.write('<div class="meta">');
+    printWindow.document.write('<div>Выполнение #' + executionData.executionId + '</div>');
+    printWindow.document.write('<div>Дата: ' + executionData.startedAt + '</div>');
+    if (executionData.completedAt) {
+        printWindow.document.write('<div>Завершен: ' + executionData.completedAt + '</div>');
+    }
+    printWindow.document.write('</div>');
+    printWindow.document.write('</div>');
+    printWindow.document.write('<div class="print-content">');
+    printWindow.document.write(htmlContent.innerHTML);
+    printWindow.document.write('</div>');
+    printWindow.document.write('</body>');
+    printWindow.document.write('</html>');
+    printWindow.document.close();
+    
+    // Focus the new window
+    printWindow.focus();
+};
+
+window.toggleFullscreen = function() {
+    const fullscreenContent = document.getElementById('fullscreenContent');
+    const htmlContent = document.getElementById('htmlContent');
+    const modalElement = document.getElementById('fullscreenModal');
+    
+    if (!htmlContent) {
+        alert('HTML контент недоступен для просмотра в полном экране');
+        return;
+    }
+    
+    if (!modalElement) {
+        alert('Модальное окно не найдено');
+        return;
+    }
+    
+    fullscreenContent.innerHTML = htmlContent.innerHTML;
+    
+    // Try to use Bootstrap modal if available, otherwise use manual approach
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } else {
+        // Fallback: manually show modal
+        modalElement.style.display = 'block';
+        modalElement.classList.add('show');
+        document.body.classList.add('modal-open');
+        
+        // Add backdrop
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop fade show';
+        backdrop.id = 'fullscreenBackdrop';
+        document.body.appendChild(backdrop);
+    }
+};
+
+window.closeFullscreen = function() {
+    const modalElement = document.getElementById('fullscreenModal');
+    const backdrop = document.getElementById('fullscreenBackdrop');
+    
+    if (modalElement) {
+        modalElement.style.display = 'none';
+        modalElement.classList.remove('show');
+        document.body.classList.remove('modal-open');
+    }
+    
+    if (backdrop) {
+        backdrop.remove();
+    }
+};
+
 
 // Toggle between grid and list view
 function toggleView(viewType) {
