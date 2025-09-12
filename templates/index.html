@@ -23,7 +23,6 @@
                     <thead class="table-dark">
                         <tr>
                             <th>Название</th>
-                            <th>Описание</th>
                             <th>Статус</th>
                             <th>Ноутбук</th>
                             <th>Последнее выполнение</th>
@@ -35,13 +34,6 @@
                         <tr>
                             <td>
                                 <strong>{{ report.name }}</strong>
-                            </td>
-                            <td>
-                                {% if report.description %}
-                                    <span class="text-muted">{{ report.description }}</span>
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
                             </td>
                             <td>
                                 <span class="badge {% if report.is_active %}bg-success{% else %}bg-secondary{% endif %}">
