@@ -119,28 +119,31 @@
     
     <!-- Global JavaScript functions -->
     <script>
-        // Define global functions that might be needed across pages
-        window.printPDF = function() {
-            const htmlContent = document.getElementById('htmlContent');
+        (function() {
+            'use strict';
             
-            if (!htmlContent) {
-                alert('HTML контент недоступен для печати');
-                return;
-            }
-            
-            // Create a new window with print-optimized content
-            const printWindow = window.open('', '_blank', 'width=800,height=600');
-            
-            // Get execution data from the page
-            const executionData = {
-                reportName: document.querySelector('[data-report-name]')?.dataset.reportName || 'Отчет',
-                executionId: document.querySelector('[data-execution-id]')?.dataset.executionId || 'N/A',
-                startedAt: document.querySelector('[data-started-at]')?.dataset.startedAt || 'N/A',
-                completedAt: document.querySelector('[data-completed-at]')?.dataset.completedAt || null
-            };
-            
-            // Create print-optimized HTML
-            const printHTML = '<!DOCTYPE html>' +
+            // Define global functions that might be needed across pages
+            window.printPDF = function() {
+                const htmlContent = document.getElementById('htmlContent');
+                
+                if (!htmlContent) {
+                    alert('HTML контент недоступен для печати');
+                    return;
+                }
+                
+                // Create a new window with print-optimized content
+                const printWindow = window.open('', '_blank', 'width=800,height=600');
+                
+                // Get execution data from the page
+                const executionData = {
+                    reportName: document.querySelector('[data-report-name]')?.dataset.reportName || 'Отчет',
+                    executionId: document.querySelector('[data-execution-id]')?.dataset.executionId || 'N/A',
+                    startedAt: document.querySelector('[data-started-at]')?.dataset.startedAt || 'N/A',
+                    completedAt: document.querySelector('[data-completed-at]')?.dataset.completedAt || null
+                };
+                
+                // Create print-optimized HTML
+                const printHTML = '<!DOCTYPE html>' +
 '<html lang="ru">' +
 '<head>' +
 '    <meta charset="UTF-8">' +
@@ -192,64 +195,65 @@
 '    </script>' +
 '</body>' +
 '</html>';
-            
-            // Write content to new window
-            printWindow.document.write(printHTML);
-            printWindow.document.close();
-            
-            // Focus the new window
-            printWindow.focus();
-        };
-        
-        window.toggleFullscreen = function() {
-            const fullscreenContent = document.getElementById('fullscreenContent');
-            const htmlContent = document.getElementById('htmlContent');
-            const modalElement = document.getElementById('fullscreenModal');
-            
-            if (!htmlContent) {
-                alert('HTML контент недоступен для просмотра в полном экране');
-                return;
-            }
-            
-            if (!modalElement) {
-                alert('Модальное окно не найдено');
-                return;
-            }
-            
-            fullscreenContent.innerHTML = htmlContent.innerHTML;
-            
-            // Try to use Bootstrap modal if available, otherwise use manual approach
-            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                const modal = new bootstrap.Modal(modalElement);
-                modal.show();
-            } else {
-                // Fallback: manually show modal
-                modalElement.style.display = 'block';
-                modalElement.classList.add('show');
-                document.body.classList.add('modal-open');
                 
-                // Add backdrop
-                const backdrop = document.createElement('div');
-                backdrop.className = 'modal-backdrop fade show';
-                backdrop.id = 'fullscreenBackdrop';
-                document.body.appendChild(backdrop);
-            }
-        };
-        
-        window.closeFullscreen = function() {
-            const modalElement = document.getElementById('fullscreenModal');
-            const backdrop = document.getElementById('fullscreenBackdrop');
+                // Write content to new window
+                printWindow.document.write(printHTML);
+                printWindow.document.close();
+                
+                // Focus the new window
+                printWindow.focus();
+            };
             
-            if (modalElement) {
-                modalElement.style.display = 'none';
-                modalElement.classList.remove('show');
-                document.body.classList.remove('modal-open');
-            }
+            window.toggleFullscreen = function() {
+                const fullscreenContent = document.getElementById('fullscreenContent');
+                const htmlContent = document.getElementById('htmlContent');
+                const modalElement = document.getElementById('fullscreenModal');
+                
+                if (!htmlContent) {
+                    alert('HTML контент недоступен для просмотра в полном экране');
+                    return;
+                }
+                
+                if (!modalElement) {
+                    alert('Модальное окно не найдено');
+                    return;
+                }
+                
+                fullscreenContent.innerHTML = htmlContent.innerHTML;
+                
+                // Try to use Bootstrap modal if available, otherwise use manual approach
+                if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                    const modal = new bootstrap.Modal(modalElement);
+                    modal.show();
+                } else {
+                    // Fallback: manually show modal
+                    modalElement.style.display = 'block';
+                    modalElement.classList.add('show');
+                    document.body.classList.add('modal-open');
+                    
+                    // Add backdrop
+                    const backdrop = document.createElement('div');
+                    backdrop.className = 'modal-backdrop fade show';
+                    backdrop.id = 'fullscreenBackdrop';
+                    document.body.appendChild(backdrop);
+                }
+            };
             
-            if (backdrop) {
-                backdrop.remove();
-            }
-        };
+            window.closeFullscreen = function() {
+                const modalElement = document.getElementById('fullscreenModal');
+                const backdrop = document.getElementById('fullscreenBackdrop');
+                
+                if (modalElement) {
+                    modalElement.style.display = 'none';
+                    modalElement.classList.remove('show');
+                    document.body.classList.remove('modal-open');
+                }
+                
+                if (backdrop) {
+                    backdrop.remove();
+                }
+            };
+        })();
     </script>
 </head>
 <body>
