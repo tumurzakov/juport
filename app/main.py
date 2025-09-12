@@ -15,7 +15,10 @@ from app.routes.reports import ReportsController
 from app.routes.notebooks import NotebooksController
 from app.routes.web import WebController
 from app.routes.files import FilesController
+from app.routes.schedules import SchedulesController
+from app.routes.tasks import TasksController
 from app.scheduler import scheduler
+from app.worker import task_worker
 
 # Configure logging
 logging.basicConfig(
@@ -54,6 +57,9 @@ async def lifespan(app: Litestar):
     # Start scheduler
     await scheduler.start()
     
+    # Start task worker
+    await task_worker.start()
+    
     logger.info("Application started successfully")
     
     yield
@@ -61,6 +67,7 @@ async def lifespan(app: Litestar):
     # Shutdown
     logger.info("Shutting down Juport application...")
     await scheduler.stop()
+    await task_worker.stop()
     await engine.dispose()
     logger.info("Application shutdown complete")
 
@@ -91,6 +98,8 @@ app = Litestar(
         ReportsController,
         NotebooksController,
         FilesController,
+        SchedulesController,
+        TasksController,
     ],
     dependencies={"db_session": get_db_session},
     cors_config=cors_config,

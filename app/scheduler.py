@@ -1,23 +1,23 @@
 """Task scheduler for running reports."""
 import asyncio
 import logging
+import threading
 from datetime import datetime
 from typing import List
 from croniter import croniter
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from app.database import async_session_factory
-from app.models import Report, ReportExecution
-from app.services.notebook_executor import NotebookExecutor
+from app.models import Report, ReportExecution, Schedule, ScheduleExecution, Task
 
 logger = logging.getLogger(__name__)
 
 
 class Scheduler:
-    """Scheduler for running reports based on cron expressions."""
+    """Scheduler for creating tasks based on cron expressions."""
     
     def __init__(self):
-        self.executor = NotebookExecutor()
         self.running = False
         self._task = None
     
@@ -52,41 +52,73 @@ class Scheduler:
                 await asyncio.sleep(60)
     
     async def _check_and_run_reports(self):
-        """Check which reports should be run and execute them."""
+        """Check which schedules should be run and execute them."""
         async with async_session_factory() as session:
-            # Get all active reports
+            # Get all active schedules that are due to run
+            now = datetime.now()
             result = await session.execute(
-                select(Report).where(Report.is_active == True)
+                select(Schedule)
+                .where(
+                    and_(
+                        Schedule.is_active == True,
+                        Schedule.next_run <= now
+                    )
+                )
+                .options(selectinload(Schedule.report))
             )
-            reports = result.scalars().all()
+            schedules = result.scalars().all()
             
-            for report in reports:
+            for schedule in schedules:
                 try:
-                    if self._should_run_report(report):
-                        await self._run_report(report, session)
+                    if self._should_run_schedule(schedule):
+                        await self._run_schedule(schedule, session)
                 except Exception as e:
-                    logger.error(f"Error checking report {report.name}: {e}")
+                    logger.error(f"Error checking schedule {schedule.name}: {e}")
     
-    def _should_run_report(self, report: Report) -> bool:
-        """Check if report should be run based on cron expression."""
+    def _should_run_schedule(self, schedule: Schedule) -> bool:
+        """Check if schedule should be run based on next_run time."""
         try:
-            # Get the last execution time
-            # For simplicity, we'll check if it's time to run based on current time
-            # In a real implementation, you'd want to track last execution time
-            cron = croniter(report.schedule_cron, datetime.now())
-            next_run = cron.get_next(datetime)
-            prev_run = cron.get_prev(datetime)
+            # Check if the schedule is due to run (within the last minute)
+            if schedule.next_run is None:
+                return False
             
-            # If the previous run time is within the last minute, it's time to run
-            time_diff = datetime.now() - prev_run
-            return time_diff.total_seconds() < 60
+            time_diff = datetime.now() - schedule.next_run
+            return time_diff.total_seconds() >= 0 and time_diff.total_seconds() < 60
             
         except Exception as e:
-            logger.error(f"Error parsing cron expression for report {report.name}: {e}")
+            logger.error(f"Error checking schedule {schedule.name}: {e}")
             return False
     
+    async def _run_schedule(self, schedule: Schedule, session: AsyncSession):
+        """Create a task for a specific schedule."""
+        logger.info(f"Creating task for schedule: {schedule.name}")
+        
+        try:
+            # Create a task for this schedule
+            task = Task(
+                report_id=schedule.report_id,
+                schedule_id=schedule.id,
+                task_type="scheduled",
+                priority=0,  # Normal priority for scheduled tasks
+                status="pending"
+            )
+            session.add(task)
+            await session.commit()
+            
+            # Update schedule last_run and next_run
+            schedule.last_run = datetime.now()
+            cron = croniter(schedule.cron_expression, datetime.now())
+            schedule.next_run = cron.get_next(datetime)
+            
+            await session.commit()
+            logger.info(f"Task created for schedule {schedule.name} (task_id: {task.id})")
+            
+        except Exception as e:
+            logger.error(f"Error creating task for schedule {schedule.name}: {e}")
+            await session.rollback()
+    
     async def _run_report(self, report: Report, session: AsyncSession):
-        """Run a specific report."""
+        """Run a specific report (legacy method for backward compatibility)."""
         logger.info(f"Starting execution of report: {report.name}")
         
         # Create execution record
@@ -126,8 +158,8 @@ class Scheduler:
             
             await session.commit()
     
-    async def run_report_manually(self, report_id: int) -> int:
-        """Manually trigger a report execution."""
+    async def create_manual_task(self, report_id: int, priority: int = 1) -> int:
+        """Create a manual task for report execution."""
         async with async_session_factory() as session:
             result = await session.execute(
                 select(Report).where(Report.id == report_id)
@@ -137,17 +169,20 @@ class Scheduler:
             if not report:
                 raise ValueError(f"Report with id {report_id} not found")
             
-            await self._run_report(report, session)
-            
-            # Return the execution id
-            result = await session.execute(
-                select(ReportExecution)
-                .where(ReportExecution.report_id == report_id)
-                .order_by(ReportExecution.started_at.desc())
-                .limit(1)
+            # Create a manual task
+            task = Task(
+                report_id=report_id,
+                schedule_id=None,
+                task_type="manual",
+                priority=priority,  # Higher priority for manual tasks
+                status="pending"
             )
-            execution = result.scalar_one()
-            return execution.id
+            session.add(task)
+            await session.commit()
+            await session.refresh(task)
+            
+            logger.info(f"Manual task created for report {report.name} (task_id: {task.id})")
+            return task.id
 
 
 # Global scheduler instance

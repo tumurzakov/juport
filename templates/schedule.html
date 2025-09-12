@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}{{ schedule.name }} - Juport{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>{{ schedule.name }}</h1>
+                <div>
+                    <a href="/schedules" class="btn btn-secondary me-2">Назад к расписаниям</a>
+                    <button class="btn btn-success me-2" onclick="executeSchedule({{ schedule.id }})">
+                        <i class="fas fa-play"></i> Запустить сейчас
+                    </button>
+                    <button class="btn btn-warning me-2" onclick="toggleSchedule({{ schedule.id }}, {{ schedule.is_active|lower }})">
+                        <i class="fas fa-{% if schedule.is_active %}pause{% else %}play{% endif %}"></i>
+                        {% if schedule.is_active %}Остановить{% else %}Запустить{% endif %}
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteSchedule({{ schedule.id }})">
+                        <i class="fas fa-trash"></i> Удалить
+                    </button>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <!-- Schedule Details -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Информация о расписании</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>Название:</strong> {{ schedule.name }}</p>
+                                    {% if schedule.description %}
+                                    <p><strong>Описание:</strong> {{ schedule.description }}</p>
+                                    {% endif %}
+                                    <p><strong>Отчет:</strong> 
+                                        <a href="/report/{{ schedule.report.id }}" class="text-decoration-none">
+                                            {{ schedule.report.name }}
+                                        </a>
+                                    </p>
+                                    <p><strong>Статус:</strong> 
+                                        {% if schedule.is_active %}
+                                        <span class="badge bg-success">Активно</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Неактивно</span>
+                                        {% endif %}
+                                    </p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p><strong>Cron выражение:</strong> <code>{{ schedule.cron_expression }}</code></p>
+                                    <p><strong>Часовой пояс:</strong> {{ schedule.timezone }}</p>
+                                    <p><strong>Создано:</strong> {{ schedule.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                                    {% if schedule.updated_at %}
+                                    <p><strong>Обновлено:</strong> {{ schedule.updated_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Execution History -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">История выполнений</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if schedule.executions %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Время запуска</th>
+                                            <th>Статус</th>
+                                            <th>Длительность</th>
+                                            <th>Действия</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for execution in schedule.executions %}
+                                        <tr>
+                                            <td>{{ execution.scheduled_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+                                            <td>
+                                                {% if execution.status == 'completed' %}
+                                                <span class="badge bg-success">Завершено</span>
+                                                {% elif execution.status == 'running' %}
+                                                <span class="badge bg-primary">Выполняется</span>
+                                                {% elif execution.status == 'failed' %}
+                                                <span class="badge bg-danger">Ошибка</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">{{ execution.status }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if execution.completed_at and execution.started_at %}
+                                                {{ (execution.completed_at - execution.started_at).total_seconds()|round(1) }}с
+                                                {% elif execution.started_at %}
+                                                Выполняется...
+                                                {% else %}
+                                                -
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if execution.report_execution_id %}
+                                                <a href="/execution/{{ execution.report_execution_id }}" class="btn btn-sm btn-outline-primary">
+                                                    <i class="fas fa-eye"></i> Просмотр
+                                                </a>
+                                                {% endif %}
+                                                {% if execution.error_message %}
+                                                <button class="btn btn-sm btn-outline-danger" onclick="showError('{{ execution.error_message|e }}')">
+                                                    <i class="fas fa-exclamation-triangle"></i> Ошибка
+                                                </button>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <p class="text-muted">Выполнений пока нет.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <!-- Schedule Status -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Статус расписания</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <strong>Последний запуск:</strong><br>
+                                {% if schedule.last_run %}
+                                {{ schedule.last_run.strftime('%d.%m.%Y %H:%M:%S') }}
+                                {% else %}
+                                <span class="text-muted">Никогда</span>
+                                {% endif %}
+                            </div>
+                            <div class="mb-3">
+                                <strong>Следующий запуск:</strong><br>
+                                {% if schedule.next_run %}
+                                {{ schedule.next_run.strftime('%d.%m.%Y %H:%M:%S') }}
+                                {% else %}
+                                <span class="text-muted">Не запланировано</span>
+                                {% endif %}
+                            </div>
+                            <div class="mb-3">
+                                <strong>Всего выполнений:</strong><br>
+                                {{ schedule.executions|length }}
+                            </div>
+                            <div class="mb-3">
+                                <strong>Успешных выполнений:</strong><br>
+                                {{ schedule.executions|selectattr('status', 'equalto', 'completed')|list|length }}
+                            </div>
+                            <div class="mb-3">
+                                <strong>Неудачных выполнений:</strong><br>
+                                {{ schedule.executions|selectattr('status', 'equalto', 'failed')|list|length }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Быстрые действия</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-outline-primary" onclick="validateCron()">
+                                    <i class="fas fa-check"></i> Проверить cron
+                                </button>
+                                <button class="btn btn-outline-info" onclick="showCronHelp()">
+                                    <i class="fas fa-question"></i> Помощь по cron
+                                </button>
+                                <a href="/report/{{ schedule.report.id }}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-chart-line"></i> Просмотр отчета
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ошибка выполнения</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="errorMessage" class="text-danger"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cron Help Modal -->
+<div class="modal fade" id="cronHelpModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Помощь по cron выражениям</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Cron выражение состоит из 5 полей:</p>
+                <pre><code>минута час день месяц день_недели</code></pre>
+                
+                <h6>Примеры:</h6>
+                <ul>
+                    <li><code>0 9 * * *</code> - каждый день в 9:00</li>
+                    <li><code>0 8 * * 1</code> - каждый понедельник в 8:00</li>
+                    <li><code>0 */6 * * *</code> - каждые 6 часов</li>
+                    <li><code>30 14 1 * *</code> - 1-го числа каждого месяца в 14:30</li>
+                    <li><code>0 0 * * 0</code> - каждое воскресенье в полночь</li>
+                </ul>
+                
+                <h6>Специальные символы:</h6>
+                <ul>
+                    <li><code>*</code> - любое значение</li>
+                    <li><code>,</code> - список значений (например: 1,3,5)</li>
+                    <li><code>-</code> - диапазон (например: 1-5)</li>
+                    <li><code>/</code> - интервал (например: */2)</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Execute schedule
+async function executeSchedule(scheduleId) {
+    if (!confirm('Запустить расписание сейчас?')) return;
+    
+    try {
+        const response = await fetch(`/api/schedules/${scheduleId}/execute`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            alert('Расписание запущено');
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Ошибка запуска расписания: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error executing schedule:', error);
+        alert('Ошибка запуска расписания');
+    }
+}
+
+// Toggle schedule
+async function toggleSchedule(scheduleId, isActive) {
+    try {
+        const response = await fetch(`/api/schedules/${scheduleId}/toggle`, {
+            method: 'PUT'
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Ошибка изменения статуса расписания: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error toggling schedule:', error);
+        alert('Ошибка изменения статуса расписания');
+    }
+}
+
+// Delete schedule
+async function deleteSchedule(scheduleId) {
+    if (!confirm('Удалить расписание? Это действие нельзя отменить.')) return;
+    
+    try {
+        const response = await fetch(`/api/schedules/${scheduleId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            window.location.href = '/schedules';
+        } else {
+            const error = await response.json();
+            alert('Ошибка удаления расписания: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error deleting schedule:', error);
+        alert('Ошибка удаления расписания');
+    }
+}
+
+// Show error message
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    new bootstrap.Modal(document.getElementById('errorModal')).show();
+}
+
+// Validate cron expression
+async function validateCron() {
+    const cronExpression = '{{ schedule.cron_expression }}';
+    
+    try {
+        const response = await fetch('/api/schedules/validate-cron', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ cron_expression: cronExpression })
+        });
+        
+        const result = await response.json();
+        
+        if (result.valid) {
+            alert(`Cron выражение корректно.\nСледующий запуск: ${result.next_run}`);
+        } else {
+            alert(`Ошибка в cron выражении: ${result.error}`);
+        }
+    } catch (error) {
+        console.error('Error validating cron:', error);
+        alert('Ошибка проверки cron выражения');
+    }
+}
+
+// Show cron help
+function showCronHelp() {
+    new bootstrap.Modal(document.getElementById('cronHelpModal')).show();
+}
+</script>
+{% endblock %}

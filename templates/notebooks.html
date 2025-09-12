@@ -126,7 +126,23 @@ function executeReport(reportName, reportPath) {
     modal.show();
     
     // Create a temporary report in database for execution
-    fetch('/api/reports/execute-direct', {
+        // Auto-detect artifacts from notebook name and common patterns
+        const artifactsConfig = {
+            files: [
+                {
+                    name: reportName.toLowerCase().replace(/\s+/g, '_') + '.xlsx',
+                    type: 'file',
+                    description: 'Excel report file'
+                },
+                {
+                    name: reportName.toLowerCase().replace(/\s+/g, '_') + '.csv',
+                    type: 'file',
+                    description: 'CSV report file'
+                }
+            ]
+        };
+        
+        fetch('/api/reports/execute-direct', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -135,7 +151,7 @@ function executeReport(reportName, reportPath) {
             name: reportName,
             notebook_path: reportPath,
             variables: {},
-            artifacts_config: {}
+            artifacts_config: artifactsConfig
         })
     })
     .then(response => response.json())
@@ -143,7 +159,7 @@ function executeReport(reportName, reportPath) {
         document.getElementById('executionStatus').innerHTML = `
             <div class="alert alert-success">
                 <i class="bi bi-check-circle"></i> ${data.message}
-                <br><small>ID выполнения: ${data.execution_id}</small>
+                <br><small>ID задачи: ${data.task_id}</small>
             </div>
         `;
         setTimeout(() => {

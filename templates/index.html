@@ -25,9 +25,8 @@
                             <th>Название</th>
                             <th>Описание</th>
                             <th>Статус</th>
-                            <th>Расписание</th>
                             <th>Ноутбук</th>
-                            <th>Создан</th>
+                            <th>Последнее выполнение</th>
                             <th>Действия</th>
                         </tr>
                     </thead>
@@ -51,17 +50,21 @@
                             </td>
                             <td>
                                 <small class="text-muted">
-                                    <i class="bi bi-clock"></i> {{ report.schedule_cron }}
-                                </small>
-                            </td>
-                            <td>
-                                <small class="text-muted">
                                     <i class="bi bi-file-code"></i> {{ report.notebook_path }}
                                 </small>
                             </td>
                             <td>
                                 <small class="text-muted">
-                                    <i class="bi bi-calendar3"></i> {{ report.created_at.strftime('%d.%m.%Y %H:%M') }}
+                                    {% if report.executions %}
+                                        {% set last_execution = report.executions | sort(attribute='completed_at', reverse=true) | first %}
+                                        {% if last_execution and last_execution.completed_at %}
+                                            <i class="bi bi-calendar-check"></i> {{ last_execution.completed_at.strftime('%d.%m.%Y %H:%M') }}
+                                        {% else %}
+                                            <i class="bi bi-hourglass-split"></i> В процессе
+                                        {% endif %}
+                                    {% else %}
+                                        <i class="bi bi-dash-circle"></i> Не выполнялся
+                                    {% endif %}
                                 </small>
                             </td>
                             <td>
@@ -162,7 +165,7 @@ function executeReport(reportId) {
         document.getElementById('executionStatus').innerHTML = `
             <div class="alert alert-success">
                 <i class="bi bi-check-circle"></i> ${data.message}
-                <br><small>ID выполнения: ${data.execution_id}</small>
+                <br><small>ID задачи: ${data.task_id}</small>
                 <br><small>Обновляем список выполнений...</small>
             </div>
         `;

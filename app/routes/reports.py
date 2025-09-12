@@ -1,4 +1,5 @@
 """Report management API routes."""
+import logging
 from datetime import datetime
 from typing import List, Optional, Union
 from litestar import Controller, get, post, put, delete, Request
@@ -16,7 +17,9 @@ from app.schemas import (
     ExecutionTriggerRequest
 )
 from app.scheduler import scheduler
-from app.services.notebook_executor import NotebookExecutor
+from app.worker import task_worker
+
+logger = logging.getLogger(__name__)
 
 
 class ReportsController(Controller):
@@ -26,7 +29,6 @@ class ReportsController(Controller):
     
     def __init__(self, owner=None):
         super().__init__(owner)
-        self.notebook_executor = NotebookExecutor()
     
     @get("/")
     async def get_reports(
@@ -150,17 +152,17 @@ class ReportsController(Controller):
         report_id: int,
         db_session: AsyncSession
     ) -> dict:
-        """Manually trigger report execution."""
+        """Manually trigger report execution by creating a task."""
         try:
-            execution_id = await scheduler.run_report_manually(report_id)
+            task_id = await scheduler.create_manual_task(report_id, priority=1)
             return {
-                "message": "Report execution started",
-                "execution_id": execution_id
+                "message": "Report execution task created",
+                "task_id": task_id
             }
         except ValueError as e:
             raise NotFoundException(str(e))
         except Exception as e:
-            raise ValidationException(detail=f"Failed to start report execution: {str(e)}")
+            raise ValidationException(detail=f"Failed to create execution task: {str(e)}")
     
     @get("/{report_id:int}/executions")
     async def get_report_executions(
@@ -200,13 +202,16 @@ class ReportsController(Controller):
         data: dict,
         db_session: AsyncSession
     ) -> dict:
-        """Execute a notebook directly and create a permanent report if it doesn't exist."""
+        """Create a task for direct notebook execution."""
         try:
             # Extract data from request
             name = data.get("name")
             notebook_path = data.get("notebook_path")
             variables = data.get("variables", {})
             artifacts_config = data.get("artifacts_config", {})
+            
+            # Log the request for debugging
+            logger.info(f"Creating report execution task: name={name}, notebook_path={notebook_path}, artifacts_config={artifacts_config}")
             
             if not name or not notebook_path:
                 raise ValidationException(detail="Name and notebook_path are required")
@@ -226,7 +231,6 @@ class ReportsController(Controller):
                     name=name,
                     description=f"Report for {name}",
                     notebook_path=notebook_path,
-                    schedule_cron="0 9 * * *",  # Daily at 9 AM
                     is_active=True,
                     variables=variables,
                     artifacts_config=artifacts_config
@@ -235,48 +239,17 @@ class ReportsController(Controller):
                 await db_session.commit()
                 await db_session.refresh(report)
             
-            # Create execution record
-            execution = ReportExecution(
-                report_id=report.id,
-                status="running",
-                started_at=datetime.now()
-            )
-            db_session.add(execution)
-            await db_session.commit()
-            await db_session.refresh(execution)
-            
-            # Execute the notebook directly
-            result = await self.notebook_executor.execute_notebook(
-                notebook_path,
-                variables,
-                artifacts_config
-            )
-            
-            # Update execution record with results
-            execution.status = "completed"
-            execution.completed_at = datetime.now()
-            execution.html_output_path = result.get("html_path")
-            execution.artifacts = result.get("artifacts", [])
-            execution.execution_log = result.get("log", "")
-            
-            await db_session.commit()
+            # Create a high-priority manual task
+            task_id = await scheduler.create_manual_task(report.id, priority=2)
             
             return {
-                "message": "Report executed successfully",
-                "execution_id": execution.id,
-                "html_path": result.get("html_path"),
-                "artifacts": result.get("artifacts", [])
+                "message": "Report execution task created",
+                "task_id": task_id,
+                "report_id": report.id
             }
             
         except Exception as e:
-            # Update execution record with error if it exists
-            if 'execution' in locals():
-                execution.status = "failed"
-                execution.completed_at = datetime.now()
-                execution.error_message = str(e)
-                await db_session.commit()
-            
-            raise ValidationException(detail=f"Failed to execute report: {str(e)}")
+            raise ValidationException(detail=f"Failed to create execution task: {str(e)}")
     
     @delete("/cleanup-old", status_code=200)
     async def cleanup_old_reports(
