@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     # Scheduler
     scheduler_interval: int = 60  # seconds
     
+    # LDAP Configuration
+    ldap_server: Optional[str] = None
+    ldap_port: Optional[str] = None
+    ldap_use_ssl: Optional[str] = None
+    ldap_user_search_base: Optional[str] = None
+    ldap_user_search_filter: Optional[str] = None
+    ldap_bind_dn: Optional[str] = None
+    ldap_bind_password: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
