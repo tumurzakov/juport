@@ -227,6 +227,9 @@
                     <button class="btn btn-outline-secondary" onclick="toggleFullscreen()" id="fullscreenBtn">
                         <i class="bi bi-fullscreen"></i> Полный экран
                     </button>
+                    <button class="btn btn-outline-secondary" onclick="printPDF()" id="printPDFBtn">
+                        <i class="bi bi-printer"></i> Печать PDF
+                    </button>
                     <button class="btn btn-outline-secondary" onclick="downloadHTML()" id="downloadHTMLBtn">
                         <i class="bi bi-download"></i> Скачать HTML
                     </button>
@@ -595,6 +598,215 @@ function closeFullscreen() {
     }
 }
 
+// Print PDF - open content in new tab optimized for printing
+function printPDF() {
+    const htmlContent = document.getElementById('htmlContent');
+    
+    if (!htmlContent) {
+        alert('HTML контент недоступен для печати');
+        return;
+    }
+    
+    // Create a new window with print-optimized content
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    
+    // Create print-optimized HTML
+    const printHTML = `
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ execution.report.name }} - Печать PDF</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: white;
+            padding: 20px;
+        }
+        
+        @media print {
+            body {
+                padding: 0;
+                margin: 0;
+            }
+            
+            .no-print {
+                display: none !important;
+            }
+            
+            .page-break {
+                page-break-before: always;
+            }
+            
+            /* Ensure content fits on page */
+            img {
+                max-width: 100% !important;
+                height: auto !important;
+            }
+            
+            table {
+                page-break-inside: avoid;
+                width: 100% !important;
+            }
+            
+            pre, code {
+                white-space: pre-wrap !important;
+                word-wrap: break-word !important;
+            }
+        }
+        
+        .print-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #333;
+        }
+        
+        .print-header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .print-header .meta {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .print-content {
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .print-content h1, .print-content h2, .print-content h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .print-content h1 { font-size: 18px; }
+        .print-content h2 { font-size: 16px; }
+        .print-content h3 { font-size: 14px; }
+        
+        .print-content p {
+            margin-bottom: 10px;
+        }
+        
+        .print-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+        
+        .print-content th,
+        .print-content td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        .print-content th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        
+        .print-content pre {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        
+        .print-content code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .print-actions {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+        }
+        
+        .print-actions button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 0 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .print-actions button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="print-actions no-print">
+        <button onclick="window.print()">
+            <i class="bi bi-printer"></i> Печать
+        </button>
+        <button onclick="window.close()">
+            <i class="bi bi-x"></i> Закрыть
+        </button>
+    </div>
+    
+    <div class="print-header">
+        <h1>{{ execution.report.name }}</h1>
+        <div class="meta">
+            <div>Выполнение #{{ execution.id }}</div>
+            <div>Дата: {{ execution.started_at.strftime('%d.%m.%Y %H:%M:%S') }}</div>
+            {% if execution.completed_at %}
+            <div>Завершен: {{ execution.completed_at.strftime('%d.%m.%Y %H:%M:%S') }}</div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="print-content">
+        ${htmlContent.innerHTML}
+    </div>
+    
+    <script>
+        // Auto-focus for better keyboard navigation
+        window.focus();
+        
+        // Add print event listener
+        window.addEventListener('beforeprint', function() {
+            console.log('Подготовка к печати...');
+        });
+        
+        window.addEventListener('afterprint', function() {
+            console.log('Печать завершена');
+        });
+    </script>
+</body>
+</html>`;
+    
+    // Write content to new window
+    printWindow.document.write(printHTML);
+    printWindow.document.close();
+    
+    // Focus the new window
+    printWindow.focus();
+}
+
 // Download HTML report
 function downloadHTML() {
     const htmlContent = document.getElementById('htmlContent');
@@ -644,17 +856,20 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize HTML buttons
     const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const printPDFBtn = document.getElementById('printPDFBtn');
     const downloadHTMLBtn = document.getElementById('downloadHTMLBtn');
     const htmlContent = document.getElementById('htmlContent');
     
-    if (fullscreenBtn && downloadHTMLBtn && htmlContent) {
+    if (fullscreenBtn && printPDFBtn && downloadHTMLBtn && htmlContent) {
         // Buttons are already enabled by default when HTML content exists
         console.log('HTML content available, buttons enabled');
-    } else if (fullscreenBtn && downloadHTMLBtn) {
+    } else if (fullscreenBtn && printPDFBtn && downloadHTMLBtn) {
         // Disable buttons if HTML content is not available
         fullscreenBtn.disabled = true;
+        printPDFBtn.disabled = true;
         downloadHTMLBtn.disabled = true;
         fullscreenBtn.title = 'HTML контент недоступен';
+        printPDFBtn.title = 'HTML контент недоступен';
         downloadHTMLBtn.title = 'HTML контент недоступен';
     }
     
