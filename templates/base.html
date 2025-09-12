@@ -140,191 +140,58 @@
             };
             
             // Create print-optimized HTML
-            const printHTML = `
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${executionData.reportName} - Печать PDF</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: white;
-            padding: 20px;
-        }
-        
-        @media print {
-            body {
-                padding: 0;
-                margin: 0;
-            }
-            
-            .no-print {
-                display: none !important;
-            }
-            
-            .page-break {
-                page-break-before: always;
-            }
-            
-            /* Ensure content fits on page */
-            img {
-                max-width: 100% !important;
-                height: auto !important;
-            }
-            
-            table {
-                page-break-inside: avoid;
-                width: 100% !important;
-            }
-            
-            pre, code {
-                white-space: pre-wrap !important;
-                word-wrap: break-word !important;
-            }
-        }
-        
-        .print-header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #333;
-        }
-        
-        .print-header h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
-            color: #333;
-        }
-        
-        .print-header .meta {
-            font-size: 14px;
-            color: #666;
-        }
-        
-        .print-content {
-            font-size: 12px;
-            line-height: 1.4;
-        }
-        
-        .print-content h1, .print-content h2, .print-content h3 {
-            margin-top: 20px;
-            margin-bottom: 10px;
-            color: #333;
-        }
-        
-        .print-content h1 { font-size: 18px; }
-        .print-content h2 { font-size: 16px; }
-        .print-content h3 { font-size: 14px; }
-        
-        .print-content p {
-            margin-bottom: 10px;
-        }
-        
-        .print-content table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 15px 0;
-        }
-        
-        .print-content th,
-        .print-content td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        
-        .print-content th {
-            background-color: #f5f5f5;
-            font-weight: bold;
-        }
-        
-        .print-content pre {
-            background-color: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 4px;
-            padding: 10px;
-            margin: 10px 0;
-            overflow-x: auto;
-        }
-        
-        .print-content code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }
-        
-        .print-actions {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 1000;
-        }
-        
-        .print-actions button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            margin: 0 5px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .print-actions button:hover {
-            background: #0056b3;
-        }
-    </style>
-</head>
-<body>
-    <div class="print-actions no-print">
-        <button onclick="window.print()">
-            Печать
-        </button>
-        <button onclick="window.close()">
-            Закрыть
-        </button>
-    </div>
-    
-    <div class="print-header">
-        <h1>${executionData.reportName}</h1>
-        <div class="meta">
-            <div>Выполнение #${executionData.executionId}</div>
-            <div>Дата: ${executionData.startedAt}</div>
-            ${executionData.completedAt ? `<div>Завершен: ${executionData.completedAt}</div>` : ''}
-        </div>
-    </div>
-    
-    <div class="print-content">
-        ${htmlContent.innerHTML}
-    </div>
-    
-    <script>
-        // Auto-focus for better keyboard navigation
-        window.focus();
-        
-        // Add print event listener
-        window.addEventListener('beforeprint', function() {
-            console.log('Подготовка к печати...');
-        });
-        
-        window.addEventListener('afterprint', function() {
-            console.log('Печать завершена');
-        });
-    </script>
-</body>
-</html>`;
+            const printHTML = '<!DOCTYPE html>' +
+'<html lang="ru">' +
+'<head>' +
+'    <meta charset="UTF-8">' +
+'    <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+'    <title>' + executionData.reportName + ' - Печать PDF</title>' +
+'    <style>' +
+'        * { margin: 0; padding: 0; box-sizing: border-box; }' +
+'        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; color: #333; background: white; padding: 20px; }' +
+'        @media print { body { padding: 0; margin: 0; } .no-print { display: none !important; } .page-break { page-break-before: always; } img { max-width: 100% !important; height: auto !important; } table { page-break-inside: avoid; width: 100% !important; } pre, code { white-space: pre-wrap !important; word-wrap: break-word !important; } }' +
+'        .print-header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #333; }' +
+'        .print-header h1 { font-size: 24px; margin-bottom: 10px; color: #333; }' +
+'        .print-header .meta { font-size: 14px; color: #666; }' +
+'        .print-content { font-size: 12px; line-height: 1.4; }' +
+'        .print-content h1, .print-content h2, .print-content h3 { margin-top: 20px; margin-bottom: 10px; color: #333; }' +
+'        .print-content h1 { font-size: 18px; }' +
+'        .print-content h2 { font-size: 16px; }' +
+'        .print-content h3 { font-size: 14px; }' +
+'        .print-content p { margin-bottom: 10px; }' +
+'        .print-content table { border-collapse: collapse; width: 100%; margin: 15px 0; }' +
+'        .print-content th, .print-content td { border: 1px solid #ddd; padding: 8px; text-align: left; }' +
+'        .print-content th { background-color: #f5f5f5; font-weight: bold; }' +
+'        .print-content pre { background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 10px; margin: 10px 0; overflow-x: auto; }' +
+'        .print-content code { background-color: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-family: "Courier New", monospace; }' +
+'        .print-actions { position: fixed; top: 10px; right: 10px; z-index: 1000; }' +
+'        .print-actions button { background: #007bff; color: white; border: none; padding: 10px 15px; margin: 0 5px; border-radius: 4px; cursor: pointer; font-size: 14px; }' +
+'        .print-actions button:hover { background: #0056b3; }' +
+'    </style>' +
+'</head>' +
+'<body>' +
+'    <div class="print-actions no-print">' +
+'        <button onclick="window.print()">Печать</button>' +
+'        <button onclick="window.close()">Закрыть</button>' +
+'    </div>' +
+'    <div class="print-header">' +
+'        <h1>' + executionData.reportName + '</h1>' +
+'        <div class="meta">' +
+'            <div>Выполнение #' + executionData.executionId + '</div>' +
+'            <div>Дата: ' + executionData.startedAt + '</div>' +
+'            ' + (executionData.completedAt ? '<div>Завершен: ' + executionData.completedAt + '</div>' : '') +
+'        </div>' +
+'    </div>' +
+'    <div class="print-content">' +
+'        ' + htmlContent.innerHTML +
+'    </div>' +
+'    <script>' +
+'        window.focus();' +
+'        window.addEventListener("beforeprint", function() { console.log("Подготовка к печати..."); });' +
+'        window.addEventListener("afterprint", function() { console.log("Печать завершена"); });' +
+'    </script>' +
+'</body>' +
+'</html>';
             
             // Write content to new window
             printWindow.document.write(printHTML);
