@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir jupyter nbconvert tqdm mysql-connector-python cli
 COPY . .
 
 # Create directories for notebooks and outputs
-RUN mkdir -p /app/notebooks /app/outputs
+RUN mkdir -p /app/data/notebooks /app/data/outputs
 
 # Expose port
 EXPOSE 8000

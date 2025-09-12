@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     database_url: str = "mysql+aiomysql://user:password@localhost:3306/juport"
     
     # Jupyter Lab
-    jupyter_notebooks_path: str = "/app/notebooks"
-    jupyter_output_path: str = "/app/outputs"
+    jupyter_notebooks_path: str = "data/notebooks"
+    jupyter_output_path: str = "data/outputs"
     
     # Application
     debug: bool = True

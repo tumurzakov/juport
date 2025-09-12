@@ -27,10 +27,9 @@ class WebController(Controller):
         db_session: AsyncSession
     ) -> Template:
         """Main page with list of reports."""
-        # Get all reports, excluding temporary ones
+        # Get all reports
         result = await db_session.execute(
             select(Report)
-            .where(~Report.name.startswith("temp_"))
             .order_by(desc(Report.created_at))
         )
         reports = result.scalars().all()

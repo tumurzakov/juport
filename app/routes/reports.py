@@ -200,7 +200,7 @@ class ReportsController(Controller):
         data: dict,
         db_session: AsyncSession
     ) -> dict:
-        """Execute a notebook directly without creating a scheduled report."""
+        """Execute a notebook directly and create a permanent report if it doesn't exist."""
         try:
             # Extract data from request
             name = data.get("name")
@@ -211,23 +211,33 @@ class ReportsController(Controller):
             if not name or not notebook_path:
                 raise ValidationException(detail="Name and notebook_path are required")
             
-            # Create a temporary report record for tracking
-            temp_report = Report(
-                name=f"temp_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                description=f"Temporary execution of {name}",
-                notebook_path=notebook_path,
-                schedule_cron="0 0 0 1 1 *",  # Never run (yearly)
-                is_active=False,
-                variables=variables,
-                artifacts_config=artifacts_config
+            # Check if report already exists
+            result = await db_session.execute(
+                select(Report).where(Report.name == name)
             )
-            db_session.add(temp_report)
-            await db_session.commit()
-            await db_session.refresh(temp_report)
+            existing_report = result.scalar_one_or_none()
+            
+            if existing_report:
+                # Use existing report
+                report = existing_report
+            else:
+                # Create a new permanent report
+                report = Report(
+                    name=name,
+                    description=f"Report for {name}",
+                    notebook_path=notebook_path,
+                    schedule_cron="0 9 * * *",  # Daily at 9 AM
+                    is_active=True,
+                    variables=variables,
+                    artifacts_config=artifacts_config
+                )
+                db_session.add(report)
+                await db_session.commit()
+                await db_session.refresh(report)
             
             # Create execution record
             execution = ReportExecution(
-                report_id=temp_report.id,
+                report_id=report.id,
                 status="running",
                 started_at=datetime.now()
             )
@@ -268,32 +278,32 @@ class ReportsController(Controller):
             
             raise ValidationException(detail=f"Failed to execute report: {str(e)}")
     
-    @delete("/cleanup-temp", status_code=200)
-    async def cleanup_temp_reports(
+    @delete("/cleanup-old", status_code=200)
+    async def cleanup_old_reports(
         self,
         db_session: AsyncSession
     ) -> dict:
-        """Clean up temporary reports older than 24 hours."""
+        """Clean up old reports without executions older than 7 days."""
         from datetime import timedelta
         
-        # Delete temporary reports older than 24 hours
-        cutoff_time = datetime.now() - timedelta(hours=24)
+        # Delete reports without executions older than 7 days
+        cutoff_time = datetime.now() - timedelta(days=7)
         
         result = await db_session.execute(
             select(Report)
-            .where(Report.name.startswith("temp_"))
             .where(Report.created_at < cutoff_time)
+            .where(~Report.executions.any())  # No executions
         )
-        temp_reports = result.scalars().all()
+        old_reports = result.scalars().all()
         
         deleted_count = 0
-        for report in temp_reports:
+        for report in old_reports:
             await db_session.delete(report)
             deleted_count += 1
         
         await db_session.commit()
         
         return {
-            "message": f"Cleaned up {deleted_count} temporary reports",
+            "message": f"Cleaned up {deleted_count} old reports without executions",
             "deleted_count": deleted_count
         }

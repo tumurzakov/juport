@@ -31,8 +31,8 @@ services:
       JUPYTER_ENABLE_LAB: "yes"
       JUPYTER_TOKEN: "jupyter-token"
     volumes:
-      - ./notebooks:/home/jovyan/work/notebooks
-      - ./outputs:/home/jovyan/work/outputs
+      - ./data/notebooks:/home/jovyan/work/data/notebooks
+      - ./data/outputs:/home/jovyan/work/data/outputs
       - ./examples:/home/jovyan/work/examples
     networks:
       - juport-network
@@ -52,8 +52,8 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: mysql+aiomysql://juport:juportpassword@mysql:3306/juport
-      JUPYTER_NOTEBOOKS_PATH: /app/notebooks
-      JUPYTER_OUTPUT_PATH: /app/outputs
+      JUPYTER_NOTEBOOKS_PATH: /app/data/notebooks
+      JUPYTER_OUTPUT_PATH: /app/data/outputs
       DEBUG: "true"
       HOST: "0.0.0.0"
       PORT: "8000"
@@ -61,8 +61,8 @@ services:
     volumes:
       - ./app:/app/app
       - ./templates:/app/templates
-      - ./notebooks:/app/notebooks
-      - ./outputs:/app/outputs
+      - ./data/notebooks:/app/data/notebooks
+      - ./data/outputs:/app/data/outputs
     depends_on:
       mysql:
         condition: service_healthy
