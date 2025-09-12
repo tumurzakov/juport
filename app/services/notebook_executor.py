@@ -58,16 +58,13 @@ class NotebookExecutor:
                 artifacts_config = detected_config
                 logger.info(f"Auto-detected artifacts for notebook {notebook_path}: {[f['name'] for f in artifacts_config['files']]}")
         
-        # Create a temporary copy of the notebook with warning suppression
-        temp_notebook_path = self._create_notebook_with_warnings_suppressed(full_notebook_path)
-        
         # Create execution timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         execution_id = f"{full_notebook_path.stem}_{timestamp}"
         
-        # Create temporary directory for execution
-        temp_execution_dir = self.output_path / f"temp_{execution_id}"
-        temp_execution_dir.mkdir(parents=True, exist_ok=True)
+        # Create temporary directory in system temp directory
+        temp_execution_dir = Path(tempfile.mkdtemp(prefix=f"juport_{execution_id}_"))
+        logger.info(f"Created temporary execution directory: {temp_execution_dir}")
         
         # Create permanent report directory
         report_name = full_notebook_path.stem
@@ -75,6 +72,10 @@ class NotebookExecutor:
         report_output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
+            # Copy notebook to temporary directory and add warning suppression
+            temp_notebook_path = self._copy_notebook_to_temp_dir(full_notebook_path, temp_execution_dir)
+            logger.info(f"Copied notebook to temporary directory: {temp_notebook_path}")
+            
             # Prepare environment variables for the notebook
             env = os.environ.copy()
             env.update({
@@ -103,13 +104,13 @@ class NotebookExecutor:
             
             logger.info(f"Running command: {' '.join(cmd)}")
             
-            # Run the command in the notebooks directory so files are created there
+            # Run the command in the temporary directory so files are created there
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.notebooks_path)
+                cwd=str(temp_execution_dir)
             )
             
             stdout, stderr = await process.communicate()
@@ -119,25 +120,16 @@ class NotebookExecutor:
                 logger.error(f"Notebook execution failed: {error_msg}")
                 raise RuntimeError(f"Notebook execution failed: {error_msg}")
             
-            # Collect artifacts from notebooks directory first (where notebook was executed)
-            artifacts = self._collect_artifacts(self.notebooks_path, artifacts_config)
+            # Collect artifacts from temporary directory (where notebook was executed)
+            artifacts = self._collect_artifacts(temp_execution_dir, artifacts_config)
             
-            # Also collect artifacts from temporary directory
-            temp_artifacts = self._collect_artifacts(temp_execution_dir, artifacts_config)
-            
-            # Merge artifacts from temp directory, avoiding duplicates
-            for artifact in temp_artifacts:
-                if not any(art["name"] == artifact["name"] for art in artifacts):
-                    artifacts.append(artifact)
-            
-            # Copy all generated files to permanent report directory
+            # Copy all generated files (except .ipynb) to permanent report directory
             final_artifacts = []
             final_html_path = None
-            files_to_cleanup = []  # Track files that need cleanup
             
             for artifact in artifacts:
                 source_path = Path(artifact["path"])
-                if source_path.exists():
+                if source_path.exists() and source_path.suffix != ".ipynb":
                     # Create unique filename with timestamp
                     timestamp_suffix = datetime.now().strftime("_%Y%m%d_%H%M%S")
                     file_extension = source_path.suffix
@@ -159,22 +151,10 @@ class NotebookExecutor:
                         # Track HTML file
                         if source_path.suffix == ".html":
                             final_html_path = str(final_path)
-                        
-                        # Mark for cleanup if it's in notebooks directory (not temp directory)
-                        if str(source_path).startswith(str(self.notebooks_path)) and source_path.suffix != ".ipynb":
-                            files_to_cleanup.append(source_path)
                             
                     except Exception as e:
                         logger.error(f"Failed to copy artifact {source_path}: {e}")
                         # Don't add to final_artifacts if copy failed
-            
-            # Clean up source files after successful copying
-            for source_path in files_to_cleanup:
-                try:
-                    source_path.unlink()
-                    logger.info(f"Cleaned up generated file: {source_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up file {source_path}: {e}")
             
             # Prepare result
             result = {
@@ -192,26 +172,23 @@ class NotebookExecutor:
             logger.error(f"Error executing notebook {notebook_path}: {e}")
             raise
         finally:
-            # Clean up temporary directory and notebook
+            # Clean up temporary directory and all its contents
             if temp_execution_dir.exists():
                 shutil.rmtree(temp_execution_dir)
                 logger.info(f"Cleaned up temporary directory: {temp_execution_dir}")
-            if temp_notebook_path.exists():
-                temp_notebook_path.unlink()
-                logger.info(f"Cleaned up temporary notebook: {temp_notebook_path}")
     
-    def _create_notebook_with_warnings_suppressed(self, notebook_path: Path) -> Path:
+    def _copy_notebook_to_temp_dir(self, notebook_path: Path, temp_dir: Path) -> Path:
         """
-        Create a temporary copy of the notebook with warning suppression code added.
+        Copy notebook to temporary directory and add warning suppression code.
         
         Args:
             notebook_path: Path to the original notebook
+            temp_dir: Temporary directory to copy notebook to
             
         Returns:
             Path to the temporary notebook with warning suppression
         """
         import json
-        import tempfile
         
         # Read the original notebook
         with open(notebook_path, 'r', encoding='utf-8') as f:
@@ -241,15 +218,14 @@ class NotebookExecutor:
         # Insert the warning suppression cell at the beginning
         notebook["cells"].insert(0, warning_cell)
         
-        # Create temporary file
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.ipynb', prefix='temp_notebook_')
-        os.close(temp_fd)
+        # Create temporary notebook path in temp directory
+        temp_notebook_path = temp_dir / notebook_path.name
         
         # Write the modified notebook
-        with open(temp_path, 'w', encoding='utf-8') as f:
+        with open(temp_notebook_path, 'w', encoding='utf-8') as f:
             json.dump(notebook, f, indent=1, ensure_ascii=False)
         
-        return Path(temp_path)
+        return temp_notebook_path
     
     def _detect_artifacts_from_notebook(self, notebook_path: Path) -> Dict[str, Any]:
         """
@@ -344,10 +320,8 @@ class NotebookExecutor:
         common_patterns = ["*.xlsx", "*.xls", "*.csv", "*.json", "*.pdf", "*.html", "*.png", "*.jpg", "*.jpeg"]
         for pattern in common_patterns:
             for file_path in output_dir.glob(pattern):
-                # Skip notebook files and HTML files that are not reports
+                # Skip notebook files
                 if file_path.suffix == ".ipynb":
-                    continue
-                if file_path.suffix == ".html" and "temp_" in file_path.name:
                     continue
                     
                 # Check if we already have this artifact

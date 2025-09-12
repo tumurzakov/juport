@@ -24,26 +24,25 @@ services:
   jupyter:
     build:
       context: .
-      dockerfile: Dockerfile.jupyter
+      dockerfile: Dockerfile
     ports:
       - "8008:8888"
     environment:
       JUPYTER_ENABLE_LAB: "yes"
       JUPYTER_TOKEN: "jupyter-token"
     volumes:
-      - ./data/notebooks:/home/jovyan/work/data/notebooks
-      - ./data/outputs:/home/jovyan/work/data/outputs
-      - ./examples:/home/jovyan/work/examples
+      - ./data/notebooks:/app/data/notebooks
+      - ./data/outputs:/app/data/outputs
     networks:
       - juport-network
     command: >
-      start-notebook.sh
+      jupyter lab
       --NotebookApp.token='jupyter-token'
       --NotebookApp.password=''
       --NotebookApp.open_browser=False
       --NotebookApp.ip='0.0.0.0'
       --NotebookApp.allow_root=True
-      --NotebookApp.notebook_dir='/home/jovyan/work'
+      --NotebookApp.notebook_dir='/app'
 
   # Juport Application
   juport:
