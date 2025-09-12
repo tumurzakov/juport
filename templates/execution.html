@@ -367,7 +367,7 @@
                 <h5 class="modal-title" id="fullscreenModalLabel">
                     <i class="bi bi-fullscreen"></i> HTML Отчет - Полный экран
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" onclick="closeFullscreen()" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0">
                 <div id="fullscreenContent" style="height: 100%; overflow: auto;">
@@ -545,17 +545,54 @@ function downloadAllFiles() {
 
 // Toggle fullscreen HTML view
 function toggleFullscreen() {
-    const modal = new bootstrap.Modal(document.getElementById('fullscreenModal'));
     const fullscreenContent = document.getElementById('fullscreenContent');
     const htmlContent = document.getElementById('htmlContent');
+    const modalElement = document.getElementById('fullscreenModal');
     
     if (!htmlContent) {
         alert('HTML контент недоступен для просмотра в полном экране');
         return;
     }
     
+    if (!modalElement) {
+        alert('Модальное окно не найдено');
+        return;
+    }
+    
     fullscreenContent.innerHTML = htmlContent.innerHTML;
-    modal.show();
+    
+    // Try to use Bootstrap modal if available, otherwise use manual approach
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } else {
+        // Fallback: manually show modal
+        modalElement.style.display = 'block';
+        modalElement.classList.add('show');
+        document.body.classList.add('modal-open');
+        
+        // Add backdrop
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop fade show';
+        backdrop.id = 'fullscreenBackdrop';
+        document.body.appendChild(backdrop);
+    }
+}
+
+// Close fullscreen modal
+function closeFullscreen() {
+    const modalElement = document.getElementById('fullscreenModal');
+    const backdrop = document.getElementById('fullscreenBackdrop');
+    
+    if (modalElement) {
+        modalElement.style.display = 'none';
+        modalElement.classList.remove('show');
+        document.body.classList.remove('modal-open');
+    }
+    
+    if (backdrop) {
+        backdrop.remove();
+    }
 }
 
 // Download HTML report
@@ -619,6 +656,24 @@ document.addEventListener('DOMContentLoaded', function() {
         downloadHTMLBtn.disabled = true;
         fullscreenBtn.title = 'HTML контент недоступен';
         downloadHTMLBtn.title = 'HTML контент недоступен';
+    }
+    
+    // Add event listeners for modal closing
+    const fullscreenModal = document.getElementById('fullscreenModal');
+    if (fullscreenModal) {
+        // Close on backdrop click
+        fullscreenModal.addEventListener('click', function(e) {
+            if (e.target === fullscreenModal) {
+                closeFullscreen();
+            }
+        });
+        
+        // Close on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && fullscreenModal.style.display === 'block') {
+                closeFullscreen();
+            }
+        });
     }
 });
 </script>
