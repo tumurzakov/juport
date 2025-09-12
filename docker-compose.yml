@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: juport
+      MYSQL_USER: juport
+      MYSQL_PASSWORD: juportpassword
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - juport-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Jupyter Lab Sidecar
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile.jupyter
+    ports:
+      - "8008:8888"
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      JUPYTER_TOKEN: "jupyter-token"
+    volumes:
+      - ./notebooks:/home/jovyan/work/notebooks
+      - ./outputs:/home/jovyan/work/outputs
+      - ./examples:/home/jovyan/work/examples
+    networks:
+      - juport-network
+    command: >
+      start-notebook.sh
+      --NotebookApp.token='jupyter-token'
+      --NotebookApp.password=''
+      --NotebookApp.open_browser=False
+      --NotebookApp.ip='0.0.0.0'
+      --NotebookApp.allow_root=True
+      --NotebookApp.notebook_dir='/home/jovyan/work'
+
+  # Juport Application
+  juport:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: mysql+aiomysql://juport:juportpassword@mysql:3306/juport
+      JUPYTER_NOTEBOOKS_PATH: /app/notebooks
+      JUPYTER_OUTPUT_PATH: /app/outputs
+      DEBUG: "true"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      SECRET_KEY: "your-secret-key-here"
+    volumes:
+      - ./app:/app/app
+      - ./templates:/app/templates
+      - ./notebooks:/app/notebooks
+      - ./outputs:/app/outputs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      jupyter:
+        condition: service_started
+    networks:
+      - juport-network
+
+volumes:
+  mysql_data:
+
+networks:
+  juport-network:
+    driver: bridge

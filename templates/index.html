@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Отчеты - Juport{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="bi bi-file-earmark-text"></i> Отчеты</h1>
+            <div>
+                <button class="btn btn-primary" onclick="location.reload()">
+                    <i class="bi bi-arrow-clockwise"></i> Обновить
+                </button>
+            </div>
+        </div>
+
+        {% if reports %}
+            <div class="row">
+                {% for report in reports %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card report-card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">{{ report.name }}</h5>
+                            <span class="badge {% if report.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                {% if report.is_active %}Активен{% else %}Неактивен{% endif %}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            {% if report.description %}
+                                <p class="card-text text-muted">{{ report.description }}</p>
+                            {% endif %}
+                            
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <i class="bi bi-clock"></i> Расписание: {{ report.schedule_cron }}
+                                </small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <i class="bi bi-file-code"></i> {{ report.notebook_path }}
+                                </small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar3"></i> Создан: {{ report.created_at.strftime('%d.%m.%Y %H:%M') }}
+                                </small>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <div class="d-flex gap-2">
+                                <a href="/report/{{ report.id }}" class="btn btn-outline-primary btn-sm flex-fill">
+                                    <i class="bi bi-eye"></i> Просмотр
+                                </a>
+                                <button class="btn btn-outline-success btn-sm" 
+                                        onclick="executeReport({{ report.id }})">
+                                    <i class="bi bi-play"></i> Запустить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-inbox display-1 text-muted"></i>
+                <h3 class="text-muted mt-3">Отчеты не найдены</h3>
+                <p class="text-muted">Создайте первый отчет через API</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Execution Modal -->
+<div class="modal fade" id="executionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Запуск отчета</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="executionStatus">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2">Запуск отчета...</p>
+                        <small class="text-muted">Отправляем запрос на сервер</small>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function executeReport(reportId) {
+    const modal = new bootstrap.Modal(document.getElementById('executionModal'));
+    modal.show();
+    
+    // Отключаем все кнопки запуска во время выполнения
+    const executeButtons = document.querySelectorAll('button[onclick*="executeReport"]');
+    executeButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Запуск...';
+    });
+    
+    fetch(`/api/reports/${reportId}/execute`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('executionStatus').innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> ${data.message}
+                <br><small>ID выполнения: ${data.execution_id}</small>
+                <br><small>Обновляем список выполнений...</small>
+            </div>
+        `;
+        // Сразу закрываем модальное окно и обновляем страницу
+        modal.hide();
+        location.reload();
+    })
+    .catch(error => {
+        document.getElementById('executionStatus').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> Ошибка: ${error.message}
+            </div>
+        `;
+        // При ошибке восстанавливаем кнопки и закрываем модальное окно
+        executeButtons.forEach(btn => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-play"></i> Запустить';
+        });
+        setTimeout(() => {
+            modal.hide();
+        }, 1500);
+    });
+}
+</script>
+{% endblock %}

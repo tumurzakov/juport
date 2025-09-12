@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}{{ report.name }} - Juport{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Список отчетов</a></li>
+                <li class="breadcrumb-item active">{{ report.name }}</li>
+            </ol>
+        </nav>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="bi bi-file-earmark-text"></i> {{ report.name }}</h1>
+            <button class="btn btn-primary" onclick="executeReport({{ report.id }})">
+                <i class="bi bi-play"></i> Запустить отчет
+            </button>
+        </div>
+
+        <!-- Report Info -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Информация об отчете</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Описание:</strong> {{ report.description or 'Не указано' }}</p>
+                        <p><strong>Статус:</strong> 
+                            <span class="badge {% if report.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                {% if report.is_active %}Активен{% else %}Неактивен{% endif %}
+                            </span>
+                        </p>
+                        <p><strong>Расписание:</strong> <code>{{ report.schedule_cron }}</code></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Путь к ноутбуку:</strong> <code>{{ report.notebook_path }}</code></p>
+                        <p><strong>Создан:</strong> {{ report.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                        {% if report.updated_at %}
+                            <p><strong>Обновлен:</strong> {{ report.updated_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Executions -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> История выполнений</h5>
+            </div>
+            <div class="card-body">
+                {% if report.executions %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Дата запуска</th>
+                                    <th>Статус</th>
+                                    <th>Время выполнения</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for execution in report.executions %}
+                                <tr>
+                                    <td>
+                                        <i class="bi bi-calendar3"></i> 
+                                        {{ execution.started_at.strftime('%d.%m.%Y %H:%M:%S') }}
+                                    </td>
+                                    <td>
+                                        <span class="badge status-{{ execution.status }}">
+                                            {% if execution.status == 'completed' %}
+                                                <i class="bi bi-check-circle"></i> Завершен
+                                            {% elif execution.status == 'running' %}
+                                                <i class="bi bi-play-circle"></i> Выполняется
+                                            {% elif execution.status == 'failed' %}
+                                                <i class="bi bi-x-circle"></i> Ошибка
+                                            {% else %}
+                                                <i class="bi bi-clock"></i> Ожидает
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if execution.completed_at %}
+                                            {% set duration = execution.completed_at - execution.started_at %}
+                                            {{ duration.total_seconds() | round(1) }}с
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if execution.status == 'completed' %}
+                                            <a href="/execution/{{ execution.id }}" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-eye"></i> Просмотр результата
+                                            </a>
+                                        {% elif execution.status == 'failed' %}
+                                            <button class="btn btn-sm btn-outline-danger" 
+                                                    onclick="showError('{{ execution.error_message | replace("'", "\\'") }}')">
+                                                <i class="bi bi-exclamation-triangle"></i> Ошибка
+                                            </button>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-inbox display-4 text-muted"></i>
+                        <p class="text-muted mt-2">Выполнений пока нет</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Execution Modal -->
+<div class="modal fade" id="executionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Запуск отчета</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="executionStatus">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2">Запуск отчета...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Ошибка выполнения
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="errorMessage" class="text-danger"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function executeReport(reportId) {
+    const modal = new bootstrap.Modal(document.getElementById('executionModal'));
+    modal.show();
+    
+    fetch(`/api/reports/${reportId}/execute`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('executionStatus').innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> ${data.message}
+                <br><small>ID выполнения: ${data.execution_id}</small>
+            </div>
+        `;
+        setTimeout(() => {
+            modal.hide();
+            location.reload();
+        }, 2000);
+    })
+    .catch(error => {
+        document.getElementById('executionStatus').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> Ошибка: ${error.message}
+            </div>
+        `;
+    });
+}
+
+function showError(errorMessage) {
+    document.getElementById('errorMessage').textContent = errorMessage;
+    const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+    modal.show();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,3 @@
+FROM jupyter/scipy-notebook:latest
+
+RUN pip install --no-cache-dir tqdm mysql-connector-python clickhouse-connect clickhouse-driver openpyxl prophet

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Доступные ноутбуки - Juport{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="bi bi-file-earmark-code"></i> Доступные ноутбуки</h1>
+            <div>
+                <a href="/" class="btn btn-outline-secondary me-2">
+                    <i class="bi bi-arrow-left"></i> Назад к отчетам
+                </a>
+                <button class="btn btn-primary" onclick="location.reload()">
+                    <i class="bi bi-arrow-clockwise"></i> Обновить
+                </button>
+            </div>
+        </div>
+
+        {% if reports %}
+            <div class="row">
+                {% for report in reports %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card report-card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">{{ report.name }}</h5>
+                            <span class="badge {% if report.has_output %}bg-success{% else %}bg-secondary{% endif %}">
+                                {% if report.has_output %}Есть результаты{% else %}Не выполнялся{% endif %}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <i class="bi bi-file-code"></i> {{ report.path }}
+                                </small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <i class="bi bi-hdd"></i> Размер: {{ "%.1f"|format(report.size / 1024) }} KB
+                                </small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar3"></i> Изменен: {{ report.modified.strftime('%d.%m.%Y %H:%M') }}
+                                </small>
+                            </div>
+
+                            {% if report.latest_execution %}
+                                <div class="execution-info">
+                                    <h6>Последнее выполнение:</h6>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <small>
+                                            <i class="bi bi-calendar3"></i> 
+                                            {{ report.latest_execution.executed_at.strftime('%d.%m.%Y %H:%M') }}
+                                        </small>
+                                        <span class="badge bg-success">
+                                            <i class="bi bi-check-circle"></i> Завершен
+                                        </span>
+                                    </div>
+                                </div>
+                            {% else %}
+                                <div class="text-muted">
+                                    <small>Выполнений пока нет</small>
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="card-footer">
+                            <div class="d-flex gap-2">
+                                {% if report.latest_execution %}
+                                    <a href="/view-report/{{ report.name }}" class="btn btn-outline-primary btn-sm flex-fill">
+                                        <i class="bi bi-eye"></i> Просмотр
+                                    </a>
+                                {% endif %}
+                                <button class="btn btn-outline-success btn-sm flex-fill" 
+                                        onclick="executeReport('{{ report.name }}', '{{ report.path }}')">
+                                    <i class="bi bi-play"></i> Запустить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-inbox display-1 text-muted"></i>
+                <h3 class="text-muted mt-3">Ноутбуки не найдены</h3>
+                <p class="text-muted">Добавьте Jupyter notebooks в папку notebooks/</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Execution Modal -->
+<div class="modal fade" id="executionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Запуск отчета</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="executionStatus">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2">Запуск отчета...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function executeReport(reportName, reportPath) {
+    const modal = new bootstrap.Modal(document.getElementById('executionModal'));
+    modal.show();
+    
+    // Create a temporary report in database for execution
+    fetch('/api/reports/execute-direct', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: reportName,
+            notebook_path: reportPath,
+            variables: {},
+            artifacts_config: {}
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('executionStatus').innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> ${data.message}
+                <br><small>ID выполнения: ${data.execution_id}</small>
+            </div>
+        `;
+        setTimeout(() => {
+            modal.hide();
+            location.reload();
+        }, 2000);
+    })
+    .catch(error => {
+        document.getElementById('executionStatus').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> Ошибка: ${error.message}
+            </div>
+        `;
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,598 @@
+{% extends "base.html" %}
+
+{% block title %}Результат выполнения - Juport{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Список отчетов</a></li>
+                <li class="breadcrumb-item"><a href="/report/{{ execution.report_id }}">{{ execution.report.name }}</a></li>
+                <li class="breadcrumb-item active">Выполнение #{{ execution.id }}</li>
+            </ol>
+        </nav>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="bi bi-file-earmark-text"></i> Результат выполнения</h1>
+            <div class="d-flex gap-2">
+                <span class="badge status-{{ execution.status }} fs-6">
+                    {% if execution.status == 'completed' %}
+                        <i class="bi bi-check-circle"></i> Завершен
+                    {% elif execution.status == 'running' %}
+                        <i class="bi bi-play-circle"></i> Выполняется
+                    {% elif execution.status == 'failed' %}
+                        <i class="bi bi-x-circle"></i> Ошибка
+                    {% else %}
+                        <i class="bi bi-clock"></i> Ожидает
+                    {% endif %}
+                </span>
+                {% if execution.status == 'completed' and execution.artifacts %}
+                <button class="btn btn-outline-primary btn-sm" onclick="downloadAllFiles()">
+                    <i class="bi bi-download"></i> Скачать все
+                </button>
+                {% endif %}
+                <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">
+                    <i class="bi bi-arrow-clockwise"></i> Обновить
+                </button>
+            </div>
+        </div>
+
+        <!-- Execution Info -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Информация о выполнении</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Отчет:</strong> {{ execution.report.name }}</p>
+                        <p><strong>Запущен:</strong> {{ execution.started_at.strftime('%d.%m.%Y %H:%M:%S') }}</p>
+                        {% if execution.completed_at %}
+                            <p><strong>Завершен:</strong> {{ execution.completed_at.strftime('%d.%m.%Y %H:%M:%S') }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Статус:</strong> 
+                            <span class="badge status-{{ execution.status }}">
+                                {% if execution.status == 'completed' %}
+                                    <i class="bi bi-check-circle"></i> Завершен
+                                {% elif execution.status == 'running' %}
+                                    <i class="bi bi-play-circle"></i> Выполняется
+                                {% elif execution.status == 'failed' %}
+                                    <i class="bi bi-x-circle"></i> Ошибка
+                                {% else %}
+                                    <i class="bi bi-clock"></i> Ожидает
+                                {% endif %}
+                            </span>
+                        </p>
+                        {% if execution.completed_at %}
+                            {% set duration = execution.completed_at - execution.started_at %}
+                            <p><strong>Время выполнения:</strong> {{ duration.total_seconds() | round(1) }} секунд</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Artifacts -->
+        {% if execution.artifacts %}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-download"></i> Артефакты ({{ execution.artifacts|length }})</h5>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-secondary" onclick="toggleView('grid')" id="gridViewBtn">
+                        <i class="bi bi-grid-3x3"></i> Сетка
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="toggleView('list')" id="listViewBtn">
+                        <i class="bi bi-list"></i> Список
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row" id="artifactsGrid">
+                    {% for artifact in execution.artifacts %}
+                    <div class="col-md-6 col-lg-4 mb-3 artifact-item" data-type="{{ artifact.type }}" data-name="{{ artifact.name }}">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="card-title mb-0">
+                                        <i class="bi bi-file-earmark"></i> {{ artifact.name }}
+                                    </h6>
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                            <i class="bi bi-three-dots-vertical"></i>
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li><a class="dropdown-item" href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" download="{{ artifact.name }}">
+                                                <i class="bi bi-download"></i> Скачать
+                                            </a></li>
+                                            {% if artifact.type in ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml'] %}
+                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'image')">
+                                                <i class="bi bi-eye"></i> Просмотр
+                                            </a></li>
+                                            {% elif artifact.type == 'text/csv' %}
+                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'csv')">
+                                                <i class="bi bi-table"></i> Просмотр
+                                            </a></li>
+                                            {% elif artifact.type == 'text/html' %}
+                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'html')">
+                                                <i class="bi bi-file-earmark-code"></i> Просмотр
+                                            </a></li>
+                                            {% endif %}
+                                        </ul>
+                                    </div>
+                                </div>
+                                {% if artifact.description %}
+                                    <p class="card-text text-muted small">{{ artifact.description }}</p>
+                                {% endif %}
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted">
+                                        {% if artifact.type == 'image/png' or artifact.type == 'image/jpeg' or artifact.type == 'image/gif' %}
+                                            <i class="bi bi-image"></i> Изображение
+                                        {% elif artifact.type == 'text/csv' %}
+                                            <i class="bi bi-table"></i> CSV
+                                        {% elif artifact.type == 'text/html' %}
+                                            <i class="bi bi-file-earmark-code"></i> HTML
+                                        {% elif artifact.type == 'application/pdf' %}
+                                            <i class="bi bi-file-pdf"></i> PDF
+                                        {% elif artifact.type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' %}
+                                            <i class="bi bi-file-excel"></i> Excel
+                                        {% else %}
+                                            <i class="bi bi-file-earmark"></i> {{ artifact.type }}
+                                        {% endif %}
+                                    </small>
+                                    <a href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" 
+                                       class="btn btn-sm btn-primary" 
+                                       download="{{ artifact.name }}">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- List view (hidden by default) -->
+                <div class="table-responsive d-none" id="artifactsList">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Имя файла</th>
+                                <th>Тип</th>
+                                <th>Описание</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for artifact in execution.artifacts %}
+                            <tr>
+                                <td>
+                                    <i class="bi bi-file-earmark"></i> {{ artifact.name }}
+                                </td>
+                                <td>
+                                    {% if artifact.type == 'image/png' or artifact.type == 'image/jpeg' or artifact.type == 'image/gif' %}
+                                        <i class="bi bi-image"></i> Изображение
+                                    {% elif artifact.type == 'text/csv' %}
+                                        <i class="bi bi-table"></i> CSV
+                                    {% elif artifact.type == 'text/html' %}
+                                        <i class="bi bi-file-earmark-code"></i> HTML
+                                    {% elif artifact.type == 'application/pdf' %}
+                                        <i class="bi bi-file-pdf"></i> PDF
+                                    {% elif artifact.type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' %}
+                                        <i class="bi bi-file-excel"></i> Excel
+                                    {% else %}
+                                        <i class="bi bi-file-earmark"></i> {{ artifact.type }}
+                                    {% endif %}
+                                </td>
+                                <td>{{ artifact.description or '-' }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" 
+                                           class="btn btn-outline-primary" 
+                                           download="{{ artifact.name }}">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                        {% if artifact.type in ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml'] %}
+                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'image')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        {% elif artifact.type == 'text/csv' %}
+                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'csv')">
+                                            <i class="bi bi-table"></i>
+                                        </button>
+                                        {% elif artifact.type == 'text/html' %}
+                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'html')">
+                                            <i class="bi bi-file-earmark-code"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- HTML Output -->
+        {% if html_content %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-code"></i> HTML Отчет</h5>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary" onclick="toggleFullscreen()">
+                        <i class="bi bi-fullscreen"></i> Полный экран
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="downloadHTML()">
+                        <i class="bi bi-download"></i> Скачать HTML
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="htmlViewer" class="border rounded" style="height: 600px; overflow: auto; position: relative;">
+                    <div id="htmlContent">
+                        {{ html_content | safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% elif execution.status == 'completed' %}
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-check-circle"></i> Выполнение завершено</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success">
+                    <h6><i class="bi bi-check-circle"></i> Отчет выполнен успешно</h6>
+                    <p class="mb-0">Время выполнения: {{ (execution.completed_at - execution.started_at).total_seconds() | round(1) }} секунд</p>
+                </div>
+                {% if execution.artifacts and execution.artifacts|length > 0 %}
+                    <p class="mb-2">Сгенерированы файлы:</p>
+                    <ul class="list-group list-group-flush">
+                        {% for artifact in execution.artifacts %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <i class="bi bi-file-earmark"></i> {{ artifact.name }}
+                                {% if artifact.description %}
+                                    <small class="text-muted">- {{ artifact.description }}</small>
+                                {% endif %}
+                            </span>
+                            <a href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" 
+                               class="btn btn-sm btn-outline-primary" 
+                               download="{{ artifact.name }}">
+                                <i class="bi bi-download"></i> Скачать
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted">HTML отчет не был сгенерирован. Возможно, ноутбук не содержит ячеек с выводом или произошла ошибка при генерации HTML.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% elif execution.status == 'failed' %}
+        <div class="card">
+            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Ошибка выполнения</h5>
+                <button class="btn btn-outline-light btn-sm" onclick="copyError()">
+                    <i class="bi bi-clipboard"></i> Копировать
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-danger">
+                    <h6><i class="bi bi-x-circle"></i> Выполнение завершилось с ошибкой</h6>
+                    <p class="mb-0">Время выполнения: {{ (execution.completed_at - execution.started_at).total_seconds() | round(1) }} секунд</p>
+                </div>
+                <div class="error-details">
+                    <h6>Детали ошибки:</h6>
+                    <pre id="errorMessage" class="bg-light p-3 rounded" style="max-height: 400px; overflow: auto; white-space: pre-wrap;">{{ execution.error_message }}</pre>
+                </div>
+            </div>
+        </div>
+        {% elif execution.status == 'running' %}
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-play-circle"></i> Выполняется</h5>
+            </div>
+            <div class="card-body text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Загрузка...</span>
+                </div>
+                <p class="mt-2">Отчет выполняется, пожалуйста, подождите...</p>
+                <button class="btn btn-outline-primary" onclick="location.reload()">
+                    <i class="bi bi-arrow-clockwise"></i> Обновить
+                </button>
+            </div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock"></i> Ожидает выполнения</h5>
+            </div>
+            <div class="card-body text-center">
+                <i class="bi bi-clock display-4 text-muted"></i>
+                <p class="text-muted mt-2">Отчет ожидает выполнения</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Execution Log -->
+        {% if execution.execution_log %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-terminal"></i> Лог выполнения</h5>
+            </div>
+            <div class="card-body">
+                <pre class="bg-light p-3 rounded" style="max-height: 300px; overflow: auto;">{{ execution.execution_log }}</pre>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- File Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="previewModalLabel">
+                    <i class="bi bi-eye"></i> Предварительный просмотр
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="previewContent" style="max-height: 70vh; overflow: auto;">
+                    <!-- Content will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                <button type="button" class="btn btn-primary" id="downloadPreviewBtn">
+                    <i class="bi bi-download"></i> Скачать
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Fullscreen HTML Modal -->
+<div class="modal fade" id="fullscreenModal" tabindex="-1" aria-labelledby="fullscreenModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fullscreenModalLabel">
+                    <i class="bi bi-fullscreen"></i> HTML Отчет - Полный экран
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="fullscreenContent" style="height: 100%; overflow: auto;">
+                    <!-- HTML content will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPreviewFile = null;
+
+// Toggle between grid and list view
+function toggleView(viewType) {
+    const gridView = document.getElementById('artifactsGrid');
+    const listView = document.getElementById('artifactsList');
+    const gridBtn = document.getElementById('gridViewBtn');
+    const listBtn = document.getElementById('listViewBtn');
+    
+    if (viewType === 'grid') {
+        gridView.classList.remove('d-none');
+        listView.classList.add('d-none');
+        gridBtn.classList.add('active');
+        listBtn.classList.remove('active');
+    } else {
+        gridView.classList.add('d-none');
+        listView.classList.remove('d-none');
+        gridBtn.classList.remove('active');
+        listBtn.classList.add('active');
+    }
+}
+
+// Preview file in modal
+function previewFile(filePath, fileName, fileType) {
+    currentPreviewFile = { path: filePath, name: fileName, type: fileType };
+    const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+    const modalTitle = document.getElementById('previewModalLabel');
+    const previewContent = document.getElementById('previewContent');
+    const downloadBtn = document.getElementById('downloadPreviewBtn');
+    
+    modalTitle.innerHTML = `<i class="bi bi-eye"></i> ${fileName}`;
+    downloadBtn.onclick = () => downloadFile(filePath, fileName);
+    
+    // Show loading
+    previewContent.innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+            <p class="mt-2">Загрузка файла...</p>
+        </div>
+    `;
+    
+    modal.show();
+    
+    // Load content based on file type
+    if (fileType === 'image') {
+        previewContent.innerHTML = `
+            <div class="text-center">
+                <img src="/api/files/${filePath}" class="img-fluid" alt="${fileName}" style="max-height: 60vh;">
+            </div>
+        `;
+    } else if (fileType === 'csv') {
+        fetch(`/api/files/${filePath}`)
+            .then(response => response.text())
+            .then(data => {
+                const lines = data.split('\n').slice(0, 100); // Show first 100 lines
+                const table = createCSVTable(lines);
+                previewContent.innerHTML = `
+                    <div class="mb-3">
+                        <small class="text-muted">Показаны первые ${Math.min(100, lines.length)} строк из ${data.split('\n').length} строк</small>
+                    </div>
+                    ${table}
+                `;
+            })
+            .catch(error => {
+                previewContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Ошибка загрузки файла: ${error.message}
+                    </div>
+                `;
+            });
+    } else if (fileType === 'html') {
+        fetch(`/api/files/${filePath}`)
+            .then(response => response.text())
+            .then(data => {
+                previewContent.innerHTML = `
+                    <div class="border rounded p-3" style="max-height: 60vh; overflow: auto;">
+                        ${data}
+                    </div>
+                `;
+            })
+            .catch(error => {
+                previewContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Ошибка загрузки файла: ${error.message}
+                    </div>
+                `;
+            });
+    }
+}
+
+// Create HTML table from CSV data
+function createCSVTable(lines) {
+    if (lines.length === 0) return '<p class="text-muted">Файл пуст</p>';
+    
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    const rows = lines.slice(1).map(line => line.split(',').map(cell => cell.trim().replace(/"/g, '')));
+    
+    let table = '<div class="table-responsive"><table class="table table-striped table-sm">';
+    
+    // Headers
+    table += '<thead class="table-dark"><tr>';
+    headers.forEach(header => {
+        table += `<th>${header}</th>`;
+    });
+    table += '</tr></thead>';
+    
+    // Rows
+    table += '<tbody>';
+    rows.forEach(row => {
+        table += '<tr>';
+        row.forEach(cell => {
+            table += `<td>${cell}</td>`;
+        });
+        table += '</tr>';
+    });
+    table += '</tbody></table></div>';
+    
+    return table;
+}
+
+// Download single file
+function downloadFile(filePath, fileName) {
+    const link = document.createElement('a');
+    link.href = `/api/files/${filePath}`;
+    link.download = fileName;
+    link.click();
+}
+
+// Download all files
+function downloadAllFiles() {
+    const artifacts = {{ execution.artifacts | tojson if execution.artifacts else '[]' }};
+    
+    if (artifacts.length === 0) {
+        alert('Нет файлов для скачивания');
+        return;
+    }
+    
+    // Create a zip file or download files one by one
+    // For now, we'll download them one by one with a small delay
+    artifacts.forEach((artifact, index) => {
+        setTimeout(() => {
+            downloadFile(artifact.path.replace('/app/outputs/', ''), artifact.name);
+        }, index * 500); // 500ms delay between downloads
+    });
+    
+    // Show notification
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-info position-fixed';
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        <i class="bi bi-info-circle"></i> 
+        Начато скачивание ${artifacts.length} файлов...
+    `;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+
+// Toggle fullscreen HTML view
+function toggleFullscreen() {
+    const modal = new bootstrap.Modal(document.getElementById('fullscreenModal'));
+    const fullscreenContent = document.getElementById('fullscreenContent');
+    const htmlContent = document.getElementById('htmlContent');
+    
+    fullscreenContent.innerHTML = htmlContent.innerHTML;
+    modal.show();
+}
+
+// Download HTML report
+function downloadHTML() {
+    const htmlContent = document.getElementById('htmlContent').innerHTML;
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '{{ execution.report.name }}_execution_{{ execution.id }}.html';
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+// Copy error message to clipboard
+function copyError() {
+    const errorText = document.getElementById('errorMessage').textContent;
+    navigator.clipboard.writeText(errorText).then(() => {
+        // Show success notification
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-success position-fixed';
+        notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 200px;';
+        notification.innerHTML = '<i class="bi bi-check-circle"></i> Ошибка скопирована в буфер обмена';
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }).catch(err => {
+        console.error('Failed to copy error message: ', err);
+        alert('Не удалось скопировать ошибку в буфер обмена');
+    });
+}
+
+// Initialize view toggle buttons
+document.addEventListener('DOMContentLoaded', function() {
+    const gridBtn = document.getElementById('gridViewBtn');
+    const listBtn = document.getElementById('listViewBtn');
+    
+    if (gridBtn && listBtn) {
+        gridBtn.classList.add('active');
+    }
+});
+</script>
+{% endblock %}
