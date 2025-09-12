@@ -17,6 +17,9 @@ from app.routes.web import WebController
 from app.routes.files import FilesController
 from app.routes.schedules import SchedulesController
 from app.routes.tasks import TasksController
+from app.routes.auth import AuthController
+from app.middleware.auth import AuthMiddleware
+from litestar.middleware.base import DefineMiddleware
 from app.scheduler import scheduler
 from app.worker import task_worker
 
@@ -94,6 +97,7 @@ template_config = TemplateConfig(
 # Create application
 app = Litestar(
     route_handlers=[
+        AuthController,
         WebController,
         ReportsController,
         NotebooksController,
@@ -106,6 +110,7 @@ app = Litestar(
     static_files_config=[static_files_config],
     template_config=template_config,
     lifespan=[lifespan],
+    middleware=[DefineMiddleware(AuthMiddleware)],
     debug=settings.debug,
 )
 

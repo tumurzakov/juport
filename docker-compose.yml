@@ -58,6 +58,7 @@ services:
       HOST: "0.0.0.0"
       PORT: "8000"
       SECRET_KEY: "your-secret-key-here"
+    env_file: .env
     volumes:
       - ./app:/app/app
       - ./templates:/app/templates

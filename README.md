@@ -481,6 +481,60 @@ logger.info("Report execution started")
 - Логи выполнения в базе данных
 - Метрики через API endpoints
 
+## Аутентификация
+
+### LDAP Аутентификация
+
+Система поддерживает аутентификацию через LDAP. Если LDAP не настроен, доступ к системе открыт без пароля.
+
+#### Настройка LDAP
+
+Добавьте следующие переменные в `.env` файл:
+
+```bash
+# LDAP сервер
+LDAP_SERVER=ldap.example.com
+LDAP_PORT=389
+LDAP_USE_SSL=false
+
+# Базовая DN
+LDAP_BASE_DN=dc=example,dc=com
+
+# Шаблон DN пользователя (один из методов)
+LDAP_USER_DN_TEMPLATE=uid={username},ou=users,dc=example,dc=com
+
+# Или поиск пользователя (альтернативный метод)
+LDAP_USER_SEARCH_BASE=ou=users,dc=example,dc=com
+LDAP_USER_SEARCH_FILTER=(uid={username})
+
+# Учетные данные для поиска (если нужны)
+LDAP_BIND_DN=cn=admin,dc=example,dc=com
+LDAP_BIND_PASSWORD=admin_password
+
+# Поиск групп пользователя (опционально)
+LDAP_GROUP_SEARCH_BASE=ou=groups,dc=example,dc=com
+LDAP_GROUP_SEARCH_FILTER=(member={user_dn})
+```
+
+#### Методы аутентификации
+
+**Метод 1: Прямая привязка (Direct Bind)**
+```bash
+LDAP_USER_DN_TEMPLATE=uid={username},ou=users,dc=example,dc=com
+```
+
+**Метод 2: Поиск и привязка (Search and Bind)**
+```bash
+LDAP_USER_SEARCH_BASE=ou=users,dc=example,dc=com
+LDAP_USER_SEARCH_FILTER=(uid={username})
+LDAP_BIND_DN=cn=admin,dc=example,dc=com
+LDAP_BIND_PASSWORD=admin_password
+```
+
+#### Без LDAP
+
+Если переменные LDAP не настроены, система работает без аутентификации - любой пользователь может получить доступ.
+
 ## Безопасность
 
 ### Рекомендации
@@ -489,7 +543,7 @@ logger.info("Report execution started")
 2. **База данных**: Ограничьте доступ к MySQL
 3. **Файлы**: Проверяйте пути к файлам на directory traversal
 4. **CORS**: Настройте CORS для продакшена
-5. **Аутентификация**: Добавьте аутентификацию для продакшена
+5. **LDAP**: Настройте LDAP аутентификацию для продакшена
 
 ### Переменные окружения
 
@@ -541,6 +595,21 @@ MIT License
 Для вопросов и предложений создавайте issues в репозитории.
 
 ## Changelog
+
+### v1.3.0
+
+- **Новая функциональность**: LDAP аутентификация с возможностью работы без пароля
+- **Безопасность**: Добавлена система аутентификации с поддержкой LDAP
+- **Гибкость**: Если LDAP не настроен, система работает без аутентификации
+- **Новые компоненты**:
+  - `app/services/auth.py` - сервис аутентификации с поддержкой LDAP
+  - `app/middleware/auth.py` - middleware для проверки аутентификации
+  - `app/routes/auth.py` - маршруты для входа и выхода
+  - `templates/login.html` - страница входа
+- **Конфигурация**: Добавлены переменные окружения для настройки LDAP
+- **Методы аутентификации**: Поддержка прямого bind и search-and-bind методов
+- **UI**: Добавлена кнопка выхода в навигации для аутентифицированных пользователей
+- **Документация**: Обновлена документация с инструкциями по настройке LDAP
 
 ### v1.2.0
 
