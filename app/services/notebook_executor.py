@@ -127,6 +127,7 @@ class NotebookExecutor:
                 raise RuntimeError(f"Notebook execution failed: {error_msg}")
             
             # Collect artifacts from temporary directory (where notebook was executed)
+            # Collect all artifacts from temporary directory (including uploaded files)
             artifacts = self._collect_artifacts(temp_execution_dir, artifacts_config)
             
             # Copy all generated files (except .ipynb) to permanent report directory
@@ -470,7 +471,7 @@ class NotebookExecutor:
         artifacts_config: Dict[str, Any]
     ) -> List[Dict[str, str]]:
         """
-        Collect generated artifacts based on configuration.
+        Collect all artifacts from output directory (including uploaded files).
         
         Args:
             output_dir: Directory where artifacts were generated
@@ -481,35 +482,30 @@ class NotebookExecutor:
         """
         artifacts = []
         
-        # Look for configured artifacts first
-        if "files" in artifacts_config:
-            for file_config in artifacts_config["files"]:
-                file_path = output_dir / file_config["name"]
-                if file_path.exists():
-                    artifacts.append({
-                        "name": file_config["name"],
-                        "path": str(file_path),
-                        "type": file_config.get("type", "file"),
-                        "description": file_config.get("description", "")
-                    })
-        
-        # Look for common output files (Excel, CSV, HTML, etc.)
-        # This includes files that might not be in the config
-        common_patterns = ["*.xlsx", "*.xls", "*.csv", "*.json", "*.pdf", "*.html", "*.png", "*.jpg", "*.jpeg"]
-        for pattern in common_patterns:
-            for file_path in output_dir.glob(pattern):
-                # Skip notebook files
-                if file_path.suffix == ".ipynb":
-                    continue
-                    
-                # Check if we already have this artifact
-                if not any(art["path"] == str(file_path) for art in artifacts):
-                    artifacts.append({
-                        "name": file_path.name,
-                        "path": str(file_path),
-                        "type": "file",
-                        "description": f"Generated {file_path.suffix[1:].upper()} file"
-                    })
+        # Collect ALL files from output directory (except .ipynb files)
+        for file_path in output_dir.iterdir():
+            if file_path.is_file() and file_path.suffix != ".ipynb":
+                # Determine file type and description
+                file_type = "file"
+                description = f"File: {file_path.name}"
+                
+                # Check if it's a common output file type
+                if file_path.suffix.lower() in [".xlsx", ".xls", ".csv", ".json", ".pdf", ".html", ".png", ".jpg", ".jpeg"]:
+                    file_type = "generated_file"
+                    description = f"Generated {file_path.suffix[1:].upper()} file"
+                elif file_path.suffix.lower() in [".txt", ".log", ".out"]:
+                    file_type = "output_file"
+                    description = f"Output file: {file_path.name}"
+                else:
+                    file_type = "uploaded_file"
+                    description = f"Uploaded file: {file_path.name}"
+                
+                artifacts.append({
+                    "name": file_path.name,
+                    "path": str(file_path),
+                    "type": file_type,
+                    "description": description
+                })
         
         # Log found artifacts for debugging
         if artifacts:
