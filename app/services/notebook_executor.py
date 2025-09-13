@@ -137,11 +137,8 @@ class NotebookExecutor:
             for artifact in artifacts:
                 source_path = Path(artifact["path"])
                 if source_path.exists() and source_path.suffix != ".ipynb":
-                    # Create unique filename with timestamp
-                    timestamp_suffix = datetime.now().strftime("_%Y%m%d_%H%M%S")
-                    file_extension = source_path.suffix
-                    file_stem = source_path.stem
-                    final_filename = f"{file_stem}{timestamp_suffix}{file_extension}"
+                    # Keep original filename as is
+                    final_filename = source_path.name
                     final_path = report_output_dir / final_filename
                     
                     try:
