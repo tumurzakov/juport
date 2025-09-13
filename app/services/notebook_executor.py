@@ -75,7 +75,7 @@ class NotebookExecutor:
         
         try:
             # Copy notebook to temporary directory and add warning suppression
-            temp_notebook_path = self._copy_notebook_to_temp_dir(full_notebook_path, temp_execution_dir)
+            temp_notebook_path = self._copy_notebook_to_temp_dir(full_notebook_path, temp_execution_dir, variables)
             logger.info(f"Copied notebook to temporary directory: {temp_notebook_path}")
             
             # Copy uploaded files to temporary directory if any
@@ -183,13 +183,15 @@ class NotebookExecutor:
                 shutil.rmtree(temp_execution_dir)
                 logger.info(f"Cleaned up temporary directory: {temp_execution_dir}")
     
-    def _copy_notebook_to_temp_dir(self, notebook_path: Path, temp_dir: Path) -> Path:
+    def _copy_notebook_to_temp_dir(self, notebook_path: Path, temp_dir: Path, variables: dict = None) -> Path:
         """
         Copy notebook to temporary directory and add warning suppression code.
+        Also replace Colab parameters and os.getenv() calls with actual values.
         
         Args:
             notebook_path: Path to the original notebook
             temp_dir: Temporary directory to copy notebook to
+            variables: Dictionary of variables to replace in the notebook
             
         Returns:
             Path to the temporary notebook with warning suppression
@@ -199,6 +201,10 @@ class NotebookExecutor:
         # Read the original notebook
         with open(notebook_path, 'r', encoding='utf-8') as f:
             notebook = json.load(f)
+        
+        # Replace variables in notebook cells if provided
+        if variables:
+            self._replace_variables_in_notebook(notebook, variables)
         
         # Create warning suppression and variables loading code cell
         warning_suppression_code = [
@@ -243,6 +249,110 @@ class NotebookExecutor:
             json.dump(notebook, f, indent=1, ensure_ascii=False)
         
         return temp_notebook_path
+    
+    def _replace_variables_in_notebook(self, notebook: dict, variables: dict):
+        """
+        Replace variables in notebook cells.
+        
+        Args:
+            notebook: Notebook dictionary
+            variables: Dictionary of variables to replace
+        """
+        for cell in notebook.get("cells", []):
+            if cell.get("cell_type") == "code":
+                source = cell.get("source", [])
+                if source:
+                    # Join source lines and replace variables
+                    cell_text = "".join(source)
+                    modified_text = self._replace_variables_in_code(cell_text, variables)
+                    
+                    # Split back into lines
+                    cell["source"] = modified_text.splitlines(keepends=True)
+    
+    def _replace_variables_in_code(self, code: str, variables: dict) -> str:
+        """
+        Replace variables in code text.
+        
+        Args:
+            code: Code text to modify
+            variables: Dictionary of variables to replace
+            
+        Returns:
+            Modified code text
+        """
+        import re
+        
+        lines = code.split('\n')
+        modified_lines = []
+        
+        for line in lines:
+            modified_line = line
+            
+            # Replace Colab parameters: variable = 'value' # @param ...
+            colab_pattern = r'^(\w+)\s*=\s*([^#\n]+?)\s*#\s*@param'
+            match = re.search(colab_pattern, line.strip())
+            if match:
+                var_name = match.group(1).strip()
+                if var_name in variables:
+                    # Replace the value part
+                    value = variables[var_name]
+                    # Format value appropriately based on type
+                    if isinstance(value, str):
+                        # Check if it's a boolean string
+                        if value.lower() in ['true', 'false']:
+                            formatted_value = 'True' if value.lower() == 'true' else 'False'
+                        # Check if it's None
+                        elif value.lower() == 'none':
+                            formatted_value = 'None'
+                        # Check if it's a number string
+                        elif value.replace('.', '').replace('-', '').isdigit():
+                            formatted_value = value
+                        # Check if it's a float string
+                        elif value.replace('.', '').replace('-', '').replace('e', '').replace('E', '').isdigit():
+                            formatted_value = value
+                        else:
+                            # Regular string with quotes
+                            formatted_value = f'"{value}"'
+                    elif isinstance(value, bool):
+                        # Boolean values
+                        formatted_value = 'True' if value else 'False'
+                    elif isinstance(value, int):
+                        # Integer values
+                        formatted_value = str(value)
+                    elif isinstance(value, float):
+                        # Float values
+                        formatted_value = str(value)
+                    elif value is None:
+                        # None values
+                        formatted_value = 'None'
+                    else:
+                        # Default to string representation with quotes
+                        formatted_value = f'"{str(value)}"'
+                    
+                    # Replace the value in the line
+                    modified_line = re.sub(
+                        r'^(\w+)\s*=\s*([^#\n]+?)\s*#\s*@param',
+                        rf'\1 = {formatted_value} # @param',
+                        line
+                    )
+            
+            # Replace os.getenv() calls: os.getenv("VAR_NAME", "default")
+            getenv_pattern = r'os\.getenv\([\'"]([^\'"]+)[\'"](?:,\s*[\'"]([^\'"]*)[\'"])?\)'
+            def replace_getenv(match):
+                var_name = match.group(1)
+                if var_name in variables:
+                    value = variables[var_name]
+                    if isinstance(value, str):
+                        return f'"{value}"'
+                    else:
+                        return str(value)
+                return match.group(0)  # Keep original if not found
+            
+            modified_line = re.sub(getenv_pattern, replace_getenv, modified_line)
+            
+            modified_lines.append(modified_line)
+        
+        return '\n'.join(modified_lines)
     
     async def _copy_uploaded_files_to_temp_dir(self, temp_dir: Path, task_id: int):
         """
