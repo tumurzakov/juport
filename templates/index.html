@@ -65,7 +65,7 @@
                                         <i class="bi bi-eye"></i> Просмотр
                                     </a>
                                     <button class="btn btn-outline-success btn-sm" 
-                                            onclick="executeReport({{ report.id }})">
+                                            onclick="showExecuteConfirmModal({{ report.id }}, '{{ report.name }}', '{{ report.notebook_path }}')">
                                         <i class="bi bi-play"></i> Запустить
                                     </button>
                                 </div>
@@ -82,6 +82,61 @@
                 <p class="text-muted">Создайте первый отчет через API</p>
             </div>
         {% endif %}
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmExecuteModal" tabindex="-1" aria-labelledby="confirmExecuteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmExecuteModalLabel">
+                    <i class="bi bi-question-circle text-warning"></i> Подтверждение запуска отчета
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Вы собираетесь запустить отчет:
+                </div>
+                <div class="mb-3">
+                    <h6><i class="bi bi-file-earmark-text"></i> Название:</h6>
+                    <p class="fw-bold" id="confirmReportName">-</p>
+                </div>
+                <div class="mb-3">
+                    <h6><i class="bi bi-file-code"></i> Путь к ноутбуку:</h6>
+                    <p class="text-muted small" id="confirmNotebookPath">-</p>
+                </div>
+                <div class="mb-3">
+                    <h6><i class="bi bi-clock"></i> Ожидаемое время выполнения:</h6>
+                    <p class="text-muted">Обычно 1-5 минут (зависит от сложности отчета)</p>
+                </div>
+                <div class="mb-3" id="variablesSection" style="display: none;">
+                    <h6><i class="bi bi-gear"></i> Переменные окружения:</h6>
+                    <div id="variablesContainer">
+                        <!-- Variables will be loaded here -->
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6><i class="bi bi-upload"></i> Загрузить файл (опционально):</h6>
+                    <input type="file" class="form-control" id="fileUpload" accept="*/*">
+                    <small class="text-muted">Файл будет скопирован во временную папку выполнения отчета</small>
+                </div>
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <strong>Внимание:</strong> Запуск отчета может занять некоторое время. 
+                    Пожалуйста, не закрывайте страницу до завершения выполнения.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle"></i> Отмена
+                </button>
+                <button type="button" class="btn btn-success" id="confirmExecuteBtn" onclick="confirmExecute()">
+                    <i class="bi bi-play-circle"></i> Запустить отчет
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -135,22 +190,159 @@ function cleanupOldReports() {
     });
 }
 
-function executeReport(reportId) {
-    const modal = new bootstrap.Modal(document.getElementById('executionModal'));
+let currentReportId = null;
+let uploadedFile = null;
+
+function showExecuteConfirmModal(reportId, reportName, notebookPath) {
+    currentReportId = reportId;
+    uploadedFile = null;
+    
+    // Заполняем данные в модальном окне
+    document.getElementById('confirmReportName').textContent = reportName;
+    document.getElementById('confirmNotebookPath').textContent = notebookPath;
+    
+    // Сбрасываем поле загрузки файла
+    document.getElementById('fileUpload').value = '';
+    
+    // Загружаем переменные ноутбука
+    loadNotebookVariables(reportId);
+    
+    // Показываем модальное окно
+    const modal = new bootstrap.Modal(document.getElementById('confirmExecuteModal'));
     modal.show();
+}
+
+async function loadNotebookVariables(reportId) {
+    try {
+        const response = await fetch(`/api/reports/${reportId}/variables`);
+        const data = await response.json();
+        
+        const variablesSection = document.getElementById('variablesSection');
+        const variablesContainer = document.getElementById('variablesContainer');
+        
+        if (data.variables && data.variables.length > 0) {
+            // Показываем секцию переменных
+            variablesSection.style.display = 'block';
+            
+            // Очищаем контейнер
+            variablesContainer.innerHTML = '';
+            
+            // Создаем поля для каждой переменной
+            data.variables.forEach(variable => {
+                const variableDiv = document.createElement('div');
+                variableDiv.className = 'mb-3';
+                
+                const label = document.createElement('label');
+                label.className = 'form-label';
+                label.textContent = variable.name;
+                if (variable.description) {
+                    label.title = variable.description;
+                }
+                
+                let input;
+                if (variable.type === 'boolean') {
+                    input = document.createElement('select');
+                    input.className = 'form-select';
+                    input.innerHTML = `
+                        <option value="true" ${variable.default_value === 'true' ? 'selected' : ''}>True</option>
+                        <option value="false" ${variable.default_value === 'false' ? 'selected' : ''}>False</option>
+                    `;
+                } else if (variable.type === 'number') {
+                    input = document.createElement('input');
+                    input.type = 'number';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else if (variable.type === 'date') {
+                    input = document.createElement('input');
+                    input.type = 'date';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else if (variable.type === 'email') {
+                    input = document.createElement('input');
+                    input.type = 'email';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else if (variable.type === 'url') {
+                    input = document.createElement('input');
+                    input.type = 'url';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else {
+                    input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                }
+                
+                input.name = `variable_${variable.name}`;
+                input.placeholder = variable.description || `Enter ${variable.name}`;
+                
+                const helpText = document.createElement('small');
+                helpText.className = 'form-text text-muted';
+                helpText.textContent = variable.description || `Environment variable: ${variable.name}`;
+                
+                variableDiv.appendChild(label);
+                variableDiv.appendChild(input);
+                variableDiv.appendChild(helpText);
+                
+                variablesContainer.appendChild(variableDiv);
+            });
+        } else {
+            // Скрываем секцию переменных
+            variablesSection.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading notebook variables:', error);
+        // Скрываем секцию переменных при ошибке
+        document.getElementById('variablesSection').style.display = 'none';
+    }
+}
+
+function confirmExecute() {
+    if (!currentReportId) {
+        console.error('No report ID selected');
+        return;
+    }
+    
+    // Получаем загруженный файл
+    const fileInput = document.getElementById('fileUpload');
+    uploadedFile = fileInput.files[0];
+    
+    // Закрываем модальное окно подтверждения
+    const confirmModal = bootstrap.Modal.getInstance(document.getElementById('confirmExecuteModal'));
+    confirmModal.hide();
+    
+    // Показываем модальное окно выполнения
+    const executionModal = new bootstrap.Modal(document.getElementById('executionModal'));
+    executionModal.show();
     
     // Отключаем все кнопки запуска во время выполнения
-    const executeButtons = document.querySelectorAll('button[onclick*="executeReport"]');
+    const executeButtons = document.querySelectorAll('button[onclick*="showExecuteConfirmModal"]');
     executeButtons.forEach(btn => {
         btn.disabled = true;
         btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Запуск...';
     });
     
-    fetch(`/api/reports/${reportId}/execute`, {
+    // Собираем значения переменных
+    const variables = {};
+    const variableInputs = document.querySelectorAll('input[name^="variable_"], select[name^="variable_"]');
+    variableInputs.forEach(input => {
+        const varName = input.name.replace('variable_', '');
+        variables[varName] = input.value;
+    });
+    
+    // Подготавливаем данные для отправки
+    const formData = new FormData();
+    formData.append('report_id', currentReportId);
+    formData.append('variables', JSON.stringify(variables));
+    if (uploadedFile) {
+        formData.append('uploaded_file', uploadedFile);
+    }
+    
+    // Выполняем запрос на запуск отчета с файлом
+    fetch(`/api/reports/${currentReportId}/execute-with-file`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
+        body: formData
     })
     .then(response => response.json())
     .then(data => {
@@ -162,7 +354,7 @@ function executeReport(reportId) {
             </div>
         `;
         // Сразу закрываем модальное окно и обновляем страницу
-        modal.hide();
+        executionModal.hide();
         location.reload();
     })
     .catch(error => {
@@ -177,9 +369,21 @@ function executeReport(reportId) {
             btn.innerHTML = '<i class="bi bi-play"></i> Запустить';
         });
         setTimeout(() => {
-            modal.hide();
+            executionModal.hide();
         }, 1500);
     });
 }
+
+// Обработчик для кнопки отмены в модальном окне подтверждения
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmModal = document.getElementById('confirmExecuteModal');
+    if (confirmModal) {
+        confirmModal.addEventListener('hidden.bs.modal', function() {
+            // Сбрасываем текущий ID отчета и файл при закрытии модального окна
+            currentReportId = null;
+            uploadedFile = null;
+        });
+    }
+});
 </script>
 {% endblock %}

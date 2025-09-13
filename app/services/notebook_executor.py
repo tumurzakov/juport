@@ -3,12 +3,13 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,8 @@ class NotebookExecutor:
         self, 
         notebook_path: str, 
         variables: Dict[str, Any],
-        artifacts_config: Dict[str, Any]
+        artifacts_config: Dict[str, Any],
+        task_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Execute a Jupyter notebook and return results.
@@ -75,6 +77,10 @@ class NotebookExecutor:
             # Copy notebook to temporary directory and add warning suppression
             temp_notebook_path = self._copy_notebook_to_temp_dir(full_notebook_path, temp_execution_dir)
             logger.info(f"Copied notebook to temporary directory: {temp_notebook_path}")
+            
+            # Copy uploaded files to temporary directory if any
+            if task_id:
+                await self._copy_uploaded_files_to_temp_dir(temp_execution_dir, task_id)
             
             # Prepare environment variables for the notebook
             env = os.environ.copy()
@@ -194,7 +200,7 @@ class NotebookExecutor:
         with open(notebook_path, 'r', encoding='utf-8') as f:
             notebook = json.load(f)
         
-        # Create warning suppression code cell
+        # Create warning suppression and variables loading code cell
         warning_suppression_code = [
             "import warnings\n",
             "warnings.filterwarnings('ignore')\n",
@@ -202,7 +208,18 @@ class NotebookExecutor:
             "pd.options.mode.chained_assignment = None\n",
             "pd.set_option('mode.chained_assignment', None)\n",
             "import os\n",
-            "os.environ['PYTHONWARNINGS'] = 'ignore'\n"
+            "import json\n",
+            "os.environ['PYTHONWARNINGS'] = 'ignore'\n",
+            "\n",
+            "# Load variables from JUPORT_VARIABLES if available\n",
+            "if 'JUPORT_VARIABLES' in os.environ:\n",
+            "    try:\n",
+            "        juport_vars = json.loads(os.environ['JUPORT_VARIABLES'])\n",
+            "        for key, value in juport_vars.items():\n",
+            "            os.environ[key] = str(value)\n",
+            "        print(f'Loaded {len(juport_vars)} variables from JUPORT_VARIABLES')\n",
+            "    except Exception as e:\n",
+            "        print(f'Error loading JUPORT_VARIABLES: {e}')\n"
         ]
         
         # Create a new cell with warning suppression
@@ -226,6 +243,51 @@ class NotebookExecutor:
             json.dump(notebook, f, indent=1, ensure_ascii=False)
         
         return temp_notebook_path
+    
+    async def _copy_uploaded_files_to_temp_dir(self, temp_dir: Path, task_id: int):
+        """
+        Copy uploaded files to temporary execution directory.
+        
+        Args:
+            temp_dir: Temporary directory for execution
+            task_id: Task ID to find uploaded files
+        """
+        try:
+            # Look for uploaded files with this task_id
+            uploads_dir = Path("data/uploads")
+            if not uploads_dir.exists():
+                logger.info("No uploads directory found, skipping file copy")
+                return
+            
+            # Find files that match the task pattern
+            # Files are stored as task_{task_id}_{original_filename}
+            uploaded_files = []
+            for file_path in uploads_dir.glob(f"task_{task_id}_*"):
+                if file_path.is_file():
+                    uploaded_files.append(file_path)
+            
+            if not uploaded_files:
+                logger.info(f"No uploaded files found for task {task_id}")
+                return
+            
+            # Copy each uploaded file to temp directory
+            for uploaded_file in uploaded_files:
+                # Extract original filename (remove task_ prefix and task_id)
+                original_filename = uploaded_file.name
+                if original_filename.startswith(f"task_{task_id}_"):
+                    # Remove task_{task_id}_ prefix
+                    original_filename = original_filename[len(f"task_{task_id}_"):]
+                
+                dest_path = temp_dir / original_filename
+                shutil.copy2(uploaded_file, dest_path)
+                logger.info(f"Copied uploaded file: {uploaded_file} -> {dest_path}")
+            
+            logger.info(f"Copied {len(uploaded_files)} uploaded files to temp directory")
+            
+        except Exception as e:
+            logger.error(f"Error copying uploaded files: {e}")
+            # Don't raise exception, just log the error
+            # This allows execution to continue even if file copy fails
     
     def _detect_artifacts_from_notebook(self, notebook_path: Path) -> Dict[str, Any]:
         """
@@ -403,3 +465,118 @@ class NotebookExecutor:
             })
         
         return reports
+    
+    def scan_notebook_variables(self, notebook_path: str) -> List[Dict[str, str]]:
+        """
+        Scan notebook for os.getenv() calls and extract variable names.
+        
+        Args:
+            notebook_path: Path to the notebook file
+            
+        Returns:
+            List of variable information with name, default_value, and description
+        """
+        import json
+        
+        variables = []
+        
+        try:
+            full_notebook_path = self.notebooks_path / notebook_path
+            
+            if not full_notebook_path.exists():
+                logger.warning(f"Notebook not found: {full_notebook_path}")
+                return variables
+            
+            with open(full_notebook_path, 'r', encoding='utf-8') as f:
+                notebook = json.load(f)
+            
+            # Pattern to match os.getenv() calls
+            # Matches: os.getenv("VAR_NAME"), os.getenv("VAR_NAME", "default"), os.getenv('VAR_NAME', 'default')
+            getenv_pattern = r'os\.getenv\([\'"]([^\'"]+)[\'"](?:,\s*[\'"]([^\'"]*)[\'"])?\)'
+            
+            for cell in notebook.get("cells", []):
+                if cell.get("cell_type") == "code":
+                    source = cell.get("source", [])
+                    cell_text = "".join(source)
+                    
+                    # Find all os.getenv() calls in this cell
+                    matches = re.findall(getenv_pattern, cell_text)
+                    
+                    for match in matches:
+                        var_name = match[0]
+                        default_value = match[1] if match[1] else ""
+                        
+                        # Skip if we already have this variable
+                        if not any(v["name"] == var_name for v in variables):
+                            # Try to find a comment or description for this variable
+                            description = self._extract_variable_description(cell_text, var_name)
+                            
+                            variables.append({
+                                "name": var_name,
+                                "default_value": default_value,
+                                "description": description,
+                                "type": self._guess_variable_type(default_value)
+                            })
+            
+            logger.info(f"Found {len(variables)} environment variables in notebook {notebook_path}: {[v['name'] for v in variables]}")
+            
+        except Exception as e:
+            logger.error(f"Error scanning notebook {notebook_path} for variables: {e}")
+        
+        return variables
+    
+    def _extract_variable_description(self, cell_text: str, var_name: str) -> str:
+        """Extract description for a variable from cell text."""
+        # Look for comments near the variable usage
+        lines = cell_text.split('\n')
+        
+        for i, line in enumerate(lines):
+            if var_name in line and 'os.getenv' in line:
+                # Check previous lines for comments
+                for j in range(max(0, i-3), i):
+                    comment_line = lines[j].strip()
+                    if comment_line.startswith('#') and '=' not in comment_line:
+                        # Extract description from comment
+                        description = comment_line[1:].strip()
+                        if len(description) > 0:
+                            return description
+                
+                # Check if there's an inline comment
+                if '#' in line:
+                    parts = line.split('#', 1)
+                    if len(parts) > 1:
+                        comment = parts[1].strip()
+                        if len(comment) > 0:
+                            return comment
+        
+        return f"Environment variable: {var_name}"
+    
+    def _guess_variable_type(self, default_value: str) -> str:
+        """Guess the type of variable based on default value."""
+        if not default_value:
+            return "text"
+        
+        # Try to parse as number
+        try:
+            float(default_value)
+            return "number"
+        except ValueError:
+            pass
+        
+        # Check for boolean-like values
+        if default_value.lower() in ['true', 'false', 'yes', 'no', '1', '0']:
+            return "boolean"
+        
+        # Check for date-like patterns
+        if re.match(r'\d{4}-\d{2}-\d{2}', default_value):
+            return "date"
+        
+        # Check for URL-like patterns
+        if default_value.startswith(('http://', 'https://', 'ftp://')):
+            return "url"
+        
+        # Check for email-like patterns
+        if '@' in default_value and '.' in default_value:
+            return "email"
+        
+        return "text"

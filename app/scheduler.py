@@ -183,6 +183,62 @@ class Scheduler:
             
             logger.info(f"Manual task created for report {report.name} (task_id: {task.id})")
             return task.id
+    
+    async def create_manual_task_with_file(self, report_id: int, priority: int = 1, uploaded_file=None) -> int:
+        """Create a manual task for report execution with uploaded file."""
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Report).where(Report.id == report_id)
+            )
+            report = result.scalar_one_or_none()
+            
+            if not report:
+                raise ValueError(f"Report with id {report_id} not found")
+            
+            # Create a manual task
+            task = Task(
+                report_id=report_id,
+                schedule_id=None,
+                task_type="manual",
+                priority=priority,  # Higher priority for manual tasks
+                status="pending"
+            )
+            session.add(task)
+            await session.commit()
+            await session.refresh(task)
+            
+            # Store uploaded file if provided
+            if uploaded_file:
+                await self._store_uploaded_file(task.id, uploaded_file)
+            
+            logger.info(f"Manual task created for report {report.name} with file (task_id: {task.id})")
+            return task.id
+    
+    async def _store_uploaded_file(self, task_id: int, uploaded_file):
+        """Store uploaded file for task execution."""
+        import os
+        import shutil
+        from pathlib import Path
+        
+        try:
+            # Create directory for uploaded files
+            uploads_dir = Path("data/uploads")
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save file with task_id prefix
+            filename = f"task_{task_id}_{uploaded_file.filename}"
+            file_path = uploads_dir / filename
+            
+            # Write file content
+            with open(file_path, "wb") as f:
+                content = await uploaded_file.read()
+                f.write(content)
+            
+            logger.info(f"Uploaded file saved: {file_path}")
+            
+        except Exception as e:
+            logger.error(f"Error storing uploaded file: {e}")
+            raise
 
 
 # Global scheduler instance

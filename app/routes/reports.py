@@ -1,10 +1,12 @@
 """Report management API routes."""
+import json
 import logging
 from datetime import datetime
 from typing import List, Optional, Union
 from litestar import Controller, get, post, put, delete, Request
 from litestar.exceptions import NotFoundException, ValidationException
 from litestar.params import Parameter
+from litestar.datastructures import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db_session
@@ -18,6 +20,7 @@ from app.schemas import (
 )
 from app.scheduler import scheduler
 from app.worker import task_worker
+from app.services.notebook_executor import NotebookExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +253,86 @@ class ReportsController(Controller):
             
         except Exception as e:
             raise ValidationException(detail=f"Failed to create execution task: {str(e)}")
+    
+    @post("/{report_id:int}/execute-with-file")
+    async def execute_report_with_file(
+        self,
+        report_id: int,
+        request: Request,
+        db_session: AsyncSession
+    ) -> dict:
+        """Execute report with uploaded file."""
+        try:
+            # Get the report
+            result = await db_session.execute(
+                select(Report).where(Report.id == report_id)
+            )
+            report = result.scalar_one_or_none()
+            
+            if not report:
+                raise NotFoundException(f"Report with id {report_id} not found")
+            
+            # Get uploaded file and variables from form data
+            form_data = await request.form()
+            uploaded_file = form_data.get("uploaded_file")
+            variables_json = form_data.get("variables", "{}")
+            
+            # Parse variables
+            try:
+                variables = json.loads(variables_json)
+            except json.JSONDecodeError:
+                variables = {}
+            
+            # Update report variables if provided
+            if variables:
+                report.variables = variables
+                await db_session.commit()
+            
+            # Create task with file information
+            task_id = await scheduler.create_manual_task_with_file(
+                report_id, 
+                priority=1,
+                uploaded_file=uploaded_file
+            )
+            
+            return {
+                "message": "Report execution task created with file",
+                "task_id": task_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Error executing report with file: {e}")
+            raise ValidationException(detail=f"Failed to create execution task: {str(e)}")
+    
+    @get("/{report_id:int}/variables")
+    async def get_report_variables(
+        self,
+        report_id: int,
+        db_session: AsyncSession
+    ) -> dict:
+        """Get environment variables for a specific report."""
+        try:
+            # Get the report
+            result = await db_session.execute(
+                select(Report).where(Report.id == report_id)
+            )
+            report = result.scalar_one_or_none()
+            
+            if not report:
+                raise NotFoundException(f"Report with id {report_id} not found")
+            
+            # Scan notebook for variables
+            executor = NotebookExecutor()
+            variables = executor.scan_notebook_variables(report.notebook_path)
+            
+            return {
+                "variables": variables,
+                "notebook_path": report.notebook_path
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting report variables: {e}")
+            raise ValidationException(detail=f"Failed to get report variables: {str(e)}")
     
     @delete("/cleanup-old", status_code=200)
     async def cleanup_old_reports(

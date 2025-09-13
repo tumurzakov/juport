@@ -106,7 +106,8 @@ class TaskWorker:
             result = await self.executor.execute_notebook(
                 task.report.notebook_path,
                 task.report.variables or {},
-                task.report.artifacts_config or {}
+                task.report.artifacts_config or {},
+                task_id=task.id
             )
             logger.info(f"Notebook execution result: artifacts={len(result.get('artifacts', []))}, html_path={result.get('html_path')}")
             
