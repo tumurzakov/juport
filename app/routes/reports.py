@@ -272,9 +272,9 @@ class ReportsController(Controller):
             if not report:
                 raise NotFoundException(f"Report with id {report_id} not found")
             
-            # Get uploaded file and variables from form data
+            # Get uploaded files and variables from form data
             form_data = await request.form()
-            uploaded_file = form_data.get("uploaded_file")
+            uploaded_files = form_data.getall("uploaded_files")  # Get all files
             variables_json = form_data.get("variables", "{}")
             
             # Parse variables
@@ -288,16 +288,17 @@ class ReportsController(Controller):
                 report.variables = variables
                 await db_session.commit()
             
-            # Create task with file information
-            task_id = await scheduler.create_manual_task_with_file(
+            # Create task with files information
+            task_id = await scheduler.create_manual_task_with_files(
                 report_id, 
                 priority=1,
-                uploaded_file=uploaded_file
+                uploaded_files=uploaded_files
             )
             
             return {
-                "message": "Report execution task created with file",
-                "task_id": task_id
+                "message": "Report execution task created with files",
+                "task_id": task_id,
+                "files_count": len(uploaded_files) if uploaded_files else 0
             }
             
         except Exception as e:

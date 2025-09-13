@@ -121,9 +121,9 @@
                     </div>
                 </div>
                 <div class="mb-3">
-                    <h6><i class="bi bi-upload"></i> Загрузить файл (опционально):</h6>
-                    <input type="file" class="form-control" id="fileUpload" accept="*/*">
-                    <small class="text-muted">Файл будет скопирован во временную папку выполнения отчета</small>
+                    <h6><i class="bi bi-upload"></i> Загрузить файлы (опционально):</h6>
+                    <input type="file" class="form-control" id="fileUpload" accept="*/*" multiple>
+                    <small class="text-muted">Файлы будут скопированы во временную папку выполнения отчета</small>
                 </div>
                 <div class="alert alert-warning">
                     <i class="bi bi-exclamation-triangle"></i> 
@@ -223,11 +223,11 @@ async function createReportAndShowModal(reportName, reportPath) {
 }
 
 let currentReportId = null;
-let uploadedFile = null;
+let uploadedFiles = [];
 
 function showExecuteConfirmModal(reportId, reportName, notebookPath) {
     currentReportId = reportId;
-    uploadedFile = null;
+    uploadedFiles = [];
     
     // Заполняем данные в модальном окне
     document.getElementById('confirmReportName').textContent = reportName;
@@ -405,7 +405,7 @@ function confirmExecute() {
     
     // Получаем загруженный файл
     const fileInput = document.getElementById('fileUpload');
-    uploadedFile = fileInput.files[0];
+    uploadedFiles = Array.from(fileInput.files);
     
     // Закрываем модальное окно подтверждения
     const confirmModal = bootstrap.Modal.getInstance(document.getElementById('confirmExecuteModal'));
@@ -427,8 +427,10 @@ function confirmExecute() {
     const formData = new FormData();
     formData.append('report_id', currentReportId);
     formData.append('variables', JSON.stringify(variables));
-    if (uploadedFile) {
-        formData.append('uploaded_file', uploadedFile);
+    if (uploadedFiles && uploadedFiles.length > 0) {
+        uploadedFiles.forEach(file => {
+            formData.append('uploaded_files', file);
+        });
     }
     
     // Выполняем запрос на запуск отчета с файлом

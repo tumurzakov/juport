@@ -382,11 +382,17 @@ class NotebookExecutor:
             
             # Copy each uploaded file to temp directory
             for uploaded_file in uploaded_files:
-                # Extract original filename (remove task_ prefix and task_id)
+                # Extract original filename (remove task_ prefix, task_id and index)
                 original_filename = uploaded_file.name
                 if original_filename.startswith(f"task_{task_id}_"):
-                    # Remove task_{task_id}_ prefix
-                    original_filename = original_filename[len(f"task_{task_id}_"):]
+                    # Remove task_{task_id}_ prefix and index
+                    # Format: task_{task_id}_{index}_{original_filename}
+                    parts = original_filename.split("_", 3)  # Split into max 4 parts
+                    if len(parts) >= 4:
+                        original_filename = parts[3]  # Get the original filename
+                    else:
+                        # Fallback for old format without index
+                        original_filename = original_filename[len(f"task_{task_id}_"):]
                 
                 dest_path = temp_dir / original_filename
                 shutil.copy2(uploaded_file, dest_path)

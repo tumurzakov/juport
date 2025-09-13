@@ -214,6 +214,36 @@ class Scheduler:
             logger.info(f"Manual task created for report {report.name} with file (task_id: {task.id})")
             return task.id
     
+    async def create_manual_task_with_files(self, report_id: int, priority: int = 1, uploaded_files=None) -> int:
+        """Create a manual task for report execution with uploaded files."""
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Report).where(Report.id == report_id)
+            )
+            report = result.scalar_one_or_none()
+            
+            if not report:
+                raise ValueError(f"Report with id {report_id} not found")
+            
+            # Create a manual task
+            task = Task(
+                report_id=report_id,
+                schedule_id=None,
+                task_type="manual",
+                priority=priority,  # Higher priority for manual tasks
+                status="pending"
+            )
+            session.add(task)
+            await session.commit()
+            await session.refresh(task)
+            
+            # Store uploaded files if provided
+            if uploaded_files:
+                await self._store_uploaded_files(task.id, uploaded_files)
+            
+            logger.info(f"Manual task created for report {report.name} with {len(uploaded_files) if uploaded_files else 0} files (task_id: {task.id})")
+            return task.id
+    
     async def _store_uploaded_file(self, task_id: int, uploaded_file):
         """Store uploaded file for task execution."""
         import os
@@ -238,6 +268,38 @@ class Scheduler:
             
         except Exception as e:
             logger.error(f"Error storing uploaded file: {e}")
+            raise
+    
+    async def _store_uploaded_files(self, task_id: int, uploaded_files):
+        """Store multiple uploaded files for task execution."""
+        import os
+        import shutil
+        from pathlib import Path
+        
+        try:
+            # Create directory for uploaded files
+            uploads_dir = Path("data/uploads")
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            
+            stored_files = []
+            for i, uploaded_file in enumerate(uploaded_files):
+                if uploaded_file and uploaded_file.filename:
+                    # Save file with task_id prefix and index
+                    filename = f"task_{task_id}_{i}_{uploaded_file.filename}"
+                    file_path = uploads_dir / filename
+                    
+                    # Write file content
+                    with open(file_path, "wb") as f:
+                        content = await uploaded_file.read()
+                        f.write(content)
+                    
+                    stored_files.append(file_path)
+                    logger.info(f"Uploaded file {i+1} saved: {file_path}")
+            
+            logger.info(f"Stored {len(stored_files)} files for task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"Error storing uploaded files: {e}")
             raise
 
 
