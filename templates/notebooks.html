@@ -93,6 +93,54 @@
     </div>
 </div>
 
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmExecuteModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-play-circle"></i> Подтверждение запуска отчета</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h6><i class="bi bi-file-text"></i> Название отчета:</h6>
+                    <p class="text-muted" id="confirmReportName"></p>
+                </div>
+                <div class="mb-3">
+                    <h6><i class="bi bi-file-code"></i> Путь к ноутбуку:</h6>
+                    <p class="text-muted" id="confirmNotebookPath"></p>
+                </div>
+                <div class="mb-3">
+                    <h6><i class="bi bi-clock"></i> Ожидаемое время выполнения:</h6>
+                    <p class="text-muted">Обычно 1-5 минут (зависит от сложности отчета)</p>
+                </div>
+                <div class="mb-3" id="variablesSection" style="display: none;">
+                    <h6><i class="bi bi-gear"></i> Переменные окружения:</h6>
+                    <div id="variablesContainer">
+                        <!-- Variables will be loaded here -->
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6><i class="bi bi-upload"></i> Загрузить файл (опционально):</h6>
+                    <input type="file" class="form-control" id="fileUpload" accept="*/*">
+                    <small class="text-muted">Файл будет скопирован во временную папку выполнения отчета</small>
+                </div>
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <strong>Внимание:</strong> Запуск отчета может занять некоторое время. 
+                    Пожалуйста, не закрывайте страницу до завершения выполнения.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="confirmExecute()">
+                    <i class="bi bi-play-fill"></i> Запустить отчет
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Execution Modal -->
 <div class="modal fade" id="executionModal" tabindex="-1">
     <div class="modal-dialog">
@@ -122,10 +170,12 @@
 {% block scripts %}
 <script>
 function executeReport(reportName, reportPath) {
-    const modal = new bootstrap.Modal(document.getElementById('executionModal'));
-    modal.show();
-    
-    // Create a temporary report in database for execution
+    // First create a report in database, then show confirmation modal
+    createReportAndShowModal(reportName, reportPath);
+}
+
+async function createReportAndShowModal(reportName, reportPath) {
+    try {
         // Auto-detect artifacts from notebook name and common patterns
         const artifactsConfig = {
             files: [
@@ -142,17 +192,182 @@ function executeReport(reportName, reportPath) {
             ]
         };
         
-        fetch('/api/reports/execute-direct', {
+        // Create report in database
+        const response = await fetch('/api/reports', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                name: reportName,
+                description: `Report for ${reportName}`,
+                notebook_path: reportPath,
+                variables: {},
+                artifacts_config: artifactsConfig
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to create report');
+        }
+        
+        const report = await response.json();
+        
+        // Show confirmation modal with variables
+        showExecuteConfirmModal(report.id, reportName, reportPath);
+        
+    } catch (error) {
+        console.error('Error creating report:', error);
+        alert('Ошибка при создании отчета: ' + error.message);
+    }
+}
+
+let currentReportId = null;
+let uploadedFile = null;
+
+function showExecuteConfirmModal(reportId, reportName, notebookPath) {
+    currentReportId = reportId;
+    uploadedFile = null;
+    
+    // Заполняем данные в модальном окне
+    document.getElementById('confirmReportName').textContent = reportName;
+    document.getElementById('confirmNotebookPath').textContent = notebookPath;
+    
+    // Сбрасываем поле загрузки файла
+    document.getElementById('fileUpload').value = '';
+    
+    // Загружаем переменные ноутбука
+    loadNotebookVariables(reportId);
+    
+    // Показываем модальное окно
+    const modal = new bootstrap.Modal(document.getElementById('confirmExecuteModal'));
+    modal.show();
+}
+
+async function loadNotebookVariables(reportId) {
+    try {
+        const response = await fetch(`/api/reports/${reportId}/variables`);
+        const data = await response.json();
+        
+        const variablesSection = document.getElementById('variablesSection');
+        const variablesContainer = document.getElementById('variablesContainer');
+        
+        if (data.variables && data.variables.length > 0) {
+            // Показываем секцию переменных
+            variablesSection.style.display = 'block';
+            
+            // Очищаем контейнер
+            variablesContainer.innerHTML = '';
+            
+            // Создаем поля для каждой переменной
+            data.variables.forEach(variable => {
+                const variableDiv = document.createElement('div');
+                variableDiv.className = 'mb-3';
+                
+                const label = document.createElement('label');
+                label.className = 'form-label';
+                label.textContent = variable.name;
+                if (variable.description) {
+                    label.title = variable.description;
+                }
+                
+                let input;
+                if (variable.type === 'boolean') {
+                    input = document.createElement('select');
+                    input.className = 'form-select';
+                    input.innerHTML = `
+                        <option value="true" ${variable.default_value === 'true' ? 'selected' : ''}>True</option>
+                        <option value="false" ${variable.default_value === 'false' ? 'selected' : ''}>False</option>
+                    `;
+                } else if (variable.type === 'number') {
+                    input = document.createElement('input');
+                    input.type = 'number';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else if (variable.type === 'date') {
+                    input = document.createElement('input');
+                    input.type = 'date';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else if (variable.type === 'email') {
+                    input = document.createElement('input');
+                    input.type = 'email';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else if (variable.type === 'url') {
+                    input = document.createElement('input');
+                    input.type = 'url';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                } else {
+                    input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'form-control';
+                    input.value = variable.default_value || '';
+                }
+                
+                input.name = `variable_${variable.name}`;
+                input.placeholder = variable.description || `Enter ${variable.name}`;
+                
+                const helpText = document.createElement('small');
+                helpText.className = 'form-text text-muted';
+                helpText.textContent = variable.description || `Environment variable: ${variable.name}`;
+                
+                variableDiv.appendChild(label);
+                variableDiv.appendChild(input);
+                variableDiv.appendChild(helpText);
+                
+                variablesContainer.appendChild(variableDiv);
+            });
+        } else {
+            // Скрываем секцию переменных
+            variablesSection.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading notebook variables:', error);
+        // Скрываем секцию переменных при ошибке
+        document.getElementById('variablesSection').style.display = 'none';
+    }
+}
+
+function confirmExecute() {
+    if (!currentReportId) {
+        console.error('No report ID selected');
+        return;
+    }
+    
+    // Получаем загруженный файл
+    const fileInput = document.getElementById('fileUpload');
+    uploadedFile = fileInput.files[0];
+    
+    // Закрываем модальное окно подтверждения
+    const confirmModal = bootstrap.Modal.getInstance(document.getElementById('confirmExecuteModal'));
+    confirmModal.hide();
+    
+    // Показываем модальное окно выполнения
+    const executionModal = new bootstrap.Modal(document.getElementById('executionModal'));
+    executionModal.show();
+    
+    // Собираем значения переменных
+    const variables = {};
+    const variableInputs = document.querySelectorAll('input[name^="variable_"], select[name^="variable_"]');
+    variableInputs.forEach(input => {
+        const varName = input.name.replace('variable_', '');
+        variables[varName] = input.value;
+    });
+    
+    // Подготавливаем данные для отправки
+    const formData = new FormData();
+    formData.append('report_id', currentReportId);
+    formData.append('variables', JSON.stringify(variables));
+    if (uploadedFile) {
+        formData.append('uploaded_file', uploadedFile);
+    }
+    
+    // Выполняем запрос на запуск отчета с файлом
+    fetch(`/api/reports/${currentReportId}/execute-with-file`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            name: reportName,
-            notebook_path: reportPath,
-            variables: {},
-            artifacts_config: artifactsConfig
-        })
+        body: formData
     })
     .then(response => response.json())
     .then(data => {
@@ -163,7 +378,7 @@ function executeReport(reportName, reportPath) {
             </div>
         `;
         setTimeout(() => {
-            modal.hide();
+            executionModal.hide();
             location.reload();
         }, 2000);
     })
