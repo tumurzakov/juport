@@ -286,6 +286,27 @@ async function loadNotebookVariables(reportId) {
                     input.type = 'number';
                     input.className = 'form-control';
                     input.value = variable.default_value || '';
+                } else if (variable.type === 'range') {
+                    // Range slider for Colab slider type
+                    const colabConfig = variable.colab_config || {};
+                    input = document.createElement('input');
+                    input.type = 'range';
+                    input.className = 'form-range';
+                    input.min = colabConfig.min || 0;
+                    input.max = colabConfig.max || 100;
+                    input.step = colabConfig.step || 1;
+                    input.value = variable.default_value || colabConfig.min || 0;
+                    
+                    // Add value display
+                    const valueDisplay = document.createElement('span');
+                    valueDisplay.className = 'ms-2 fw-bold';
+                    valueDisplay.textContent = input.value;
+                    input.addEventListener('input', () => {
+                        valueDisplay.textContent = input.value;
+                    });
+                    variableDiv.appendChild(input);
+                    variableDiv.appendChild(valueDisplay);
+                    input = null; // Don't add input again below
                 } else if (variable.type === 'date') {
                     input = document.createElement('input');
                     input.type = 'date';
@@ -301,6 +322,41 @@ async function loadNotebookVariables(reportId) {
                     input.type = 'url';
                     input.className = 'form-control';
                     input.value = variable.default_value || '';
+                } else if (variable.type === 'dropdown' || (variable.colab_config && variable.colab_config.options && variable.colab_config.options.length > 0)) {
+                    // Dropdown with options
+                    input = document.createElement('select');
+                    input.className = 'form-select';
+                    
+                    // Check if allow_input is enabled
+                    if (variable.colab_config && variable.colab_config.allow_input) {
+                        // Create a datalist for autocomplete
+                        const datalist = document.createElement('datalist');
+                        datalist.id = `datalist_${variable.name}`;
+                        variable.colab_config.options.forEach(option => {
+                            const optionEl = document.createElement('option');
+                            optionEl.value = option;
+                            datalist.appendChild(optionEl);
+                        });
+                        document.body.appendChild(datalist);
+                        
+                        input = document.createElement('input');
+                        input.type = 'text';
+                        input.className = 'form-control';
+                        input.setAttribute('list', `datalist_${variable.name}`);
+                        input.value = variable.default_value || '';
+                    } else {
+                        // Regular dropdown
+                        const options = variable.colab_config ? variable.colab_config.options : [];
+                        options.forEach(option => {
+                            const optionEl = document.createElement('option');
+                            optionEl.value = option;
+                            optionEl.textContent = option;
+                            if (option === variable.default_value) {
+                                optionEl.selected = true;
+                            }
+                            input.appendChild(optionEl);
+                        });
+                    }
                 } else {
                     input = document.createElement('input');
                     input.type = 'text';
@@ -308,15 +364,26 @@ async function loadNotebookVariables(reportId) {
                     input.value = variable.default_value || '';
                 }
                 
-                input.name = `variable_${variable.name}`;
-                input.placeholder = variable.description || `Enter ${variable.name}`;
+                // Add placeholder if available
+                if (variable.colab_config && variable.colab_config.placeholder) {
+                    input.placeholder = variable.colab_config.placeholder;
+                }
+                
+                if (input) {
+                    input.name = `variable_${variable.name}`;
+                    if (!input.placeholder) {
+                        input.placeholder = variable.description || `Enter ${variable.name}`;
+                    }
+                }
                 
                 const helpText = document.createElement('small');
                 helpText.className = 'form-text text-muted';
                 helpText.textContent = variable.description || `Environment variable: ${variable.name}`;
                 
                 variableDiv.appendChild(label);
-                variableDiv.appendChild(input);
+                if (input) {
+                    variableDiv.appendChild(input);
+                }
                 variableDiv.appendChild(helpText);
                 
                 variablesContainer.appendChild(variableDiv);

@@ -468,7 +468,7 @@ class NotebookExecutor:
     
     def scan_notebook_variables(self, notebook_path: str) -> List[Dict[str, str]]:
         """
-        Scan notebook for os.getenv() calls and extract variable names.
+        Scan notebook for os.getenv() calls and Colab @param annotations.
         
         Args:
             notebook_path: Path to the notebook file
@@ -490,40 +490,176 @@ class NotebookExecutor:
             with open(full_notebook_path, 'r', encoding='utf-8') as f:
                 notebook = json.load(f)
             
-            # Pattern to match os.getenv() calls
-            # Matches: os.getenv("VAR_NAME"), os.getenv("VAR_NAME", "default"), os.getenv('VAR_NAME', 'default')
-            getenv_pattern = r'os\.getenv\([\'"]([^\'"]+)[\'"](?:,\s*[\'"]([^\'"]*)[\'"])?\)'
-            
             for cell in notebook.get("cells", []):
                 if cell.get("cell_type") == "code":
                     source = cell.get("source", [])
                     cell_text = "".join(source)
                     
-                    # Find all os.getenv() calls in this cell
-                    matches = re.findall(getenv_pattern, cell_text)
+                    # Scan for os.getenv() calls
+                    self._scan_os_getenv_variables(cell_text, variables)
                     
-                    for match in matches:
-                        var_name = match[0]
-                        default_value = match[1] if match[1] else ""
-                        
-                        # Skip if we already have this variable
-                        if not any(v["name"] == var_name for v in variables):
-                            # Try to find a comment or description for this variable
-                            description = self._extract_variable_description(cell_text, var_name)
-                            
-                            variables.append({
-                                "name": var_name,
-                                "default_value": default_value,
-                                "description": description,
-                                "type": self._guess_variable_type(default_value)
-                            })
+                    # Scan for Colab @param annotations
+                    self._scan_colab_params(cell_text, variables)
             
-            logger.info(f"Found {len(variables)} environment variables in notebook {notebook_path}: {[v['name'] for v in variables]}")
+            logger.info(f"Found {len(variables)} variables in notebook {notebook_path}: {[v['name'] for v in variables]}")
             
         except Exception as e:
             logger.error(f"Error scanning notebook {notebook_path} for variables: {e}")
         
         return variables
+    
+    def _scan_os_getenv_variables(self, cell_text: str, variables: List[Dict[str, str]]):
+        """Scan for os.getenv() calls in cell text."""
+        # Pattern to match os.getenv() calls
+        # Matches: os.getenv("VAR_NAME"), os.getenv("VAR_NAME", "default"), os.getenv('VAR_NAME', 'default')
+        getenv_pattern = r'os\.getenv\([\'"]([^\'"]+)[\'"](?:,\s*[\'"]([^\'"]*)[\'"])?\)'
+        
+        matches = re.findall(getenv_pattern, cell_text)
+        
+        for match in matches:
+            var_name = match[0]
+            default_value = match[1] if match[1] else ""
+            
+            # Skip if we already have this variable
+            if not any(v["name"] == var_name for v in variables):
+                # Try to find a comment or description for this variable
+                description = self._extract_variable_description(cell_text, var_name)
+                
+                variables.append({
+                    "name": var_name,
+                    "default_value": default_value,
+                    "description": description,
+                    "type": self._guess_variable_type(default_value),
+                    "source": "os.getenv"
+                })
+    
+    def _scan_colab_params(self, cell_text: str, variables: List[Dict[str, str]]):
+        """Scan for Colab @param annotations in cell text."""
+        # Pattern to match Colab @param annotations
+        # Matches: variable = 'value' # @param {type:"string"} or variable = 'value' # @param ["option1", "option2"]
+        colab_pattern = r'^(\w+)\s*=\s*([^#\n]+?)\s*#\s*@param\s*(.+?)(?:\s*$|\s*\{)'
+        
+        lines = cell_text.split('\n')
+        for line in lines:
+            match = re.search(colab_pattern, line.strip())
+            if match:
+                var_name = match.group(1).strip()
+                default_value = match.group(2).strip().strip('\'"')
+                param_part = match.group(3).strip()
+                
+                # Skip if we already have this variable
+                if not any(v["name"] == var_name for v in variables):
+                    # Parse param configuration
+                    param_info = self._parse_colab_param(param_part, default_value, line)
+                    
+                    variables.append({
+                        "name": var_name,
+                        "default_value": default_value,
+                        "description": param_info.get("description", f"Colab parameter: {var_name}"),
+                        "type": param_info.get("type", "text"),
+                        "source": "colab_param",
+                        "colab_config": param_info
+                    })
+    
+    def _parse_colab_param(self, param_config: str, default_value: str, original_line: str = "") -> Dict[str, Any]:
+        """Parse Colab @param configuration."""
+        import json
+        
+        try:
+            config_str = param_config.strip()
+            
+            # Check if it's a simple dropdown list (starts with [)
+            if config_str.startswith('[') and config_str.endswith(']'):
+                # Simple dropdown list
+                options_str = config_str[1:-1]  # Remove brackets
+                options = [opt.strip().strip('\'"') for opt in options_str.split(',')]
+                
+                return {
+                    "type": "dropdown",
+                    "original_type": "dropdown",
+                    "options": options,
+                    "description": ""
+                }
+            
+            # JSON configuration
+            if not config_str.startswith('{'):
+                config_str = '{' + config_str + '}'
+            
+            # Try to fix common JSON issues
+            config_str = config_str.replace("'", '"')  # Replace single quotes with double quotes
+            
+            # Fix unquoted keys (common in Colab @param)
+            import re
+            config_str = re.sub(r'(\w+):', r'"\1":', config_str)
+            
+            # Parse the configuration
+            config = json.loads(config_str)
+            
+            # Determine type and additional options
+            param_type = config.get("type", "string")
+            
+            # Map Colab types to our types
+            type_mapping = {
+                "string": "text",
+                "number": "number", 
+                "integer": "number",
+                "boolean": "boolean",
+                "date": "date",
+                "raw": "text",
+                "dropdown": "dropdown"
+            }
+            
+            mapped_type = type_mapping.get(param_type, "text")
+            
+            # Handle special cases
+            if param_type == "slider":
+                if "min" in config and "max" in config:
+                    mapped_type = "range"
+                else:
+                    mapped_type = "number"
+            
+            # Extract options for dropdown
+            options = []
+            if "[" in original_line and "]" in original_line:
+                # Extract dropdown options from the original line
+                options_match = re.search(r'\[([^\]]+)\]', original_line)
+                if options_match:
+                    options_str = options_match.group(1)
+                    # Parse options (handle both strings and other types)
+                    options = [opt.strip().strip('\'"') for opt in options_str.split(',')]
+            
+            result = {
+                "type": mapped_type,
+                "original_type": param_type,
+                "options": options,
+                "description": config.get("description", "")
+            }
+            
+            # Add slider-specific properties
+            if param_type == "slider":
+                result.update({
+                    "min": config.get("min", 0),
+                    "max": config.get("max", 100),
+                    "step": config.get("step", 1)
+                })
+            
+            # Add placeholder
+            if "placeholder" in config:
+                result["placeholder"] = config["placeholder"]
+            
+            # Add allow-input for text fields
+            if "allow-input" in config:
+                result["allow_input"] = config["allow-input"]
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Failed to parse Colab param config '{param_config}': {e}")
+            return {
+                "type": "text",
+                "original_type": "unknown",
+                "description": ""
+            }
     
     def _extract_variable_description(self, cell_text: str, var_name: str) -> str:
         """Extract description for a variable from cell text."""
