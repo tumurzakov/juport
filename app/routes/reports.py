@@ -274,7 +274,7 @@ class ReportsController(Controller):
             
             # Get uploaded files and variables from form data
             form_data = await request.form()
-            uploaded_files = form_data.getall("uploaded_files")  # Get all files
+            uploaded_files = form_data.getall("uploaded_files") if "uploaded_files" in form_data else []  # Get all files
             variables_json = form_data.get("variables", "{}")
             
             # Parse variables
