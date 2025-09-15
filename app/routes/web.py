@@ -112,8 +112,18 @@ class WebController(Controller):
         html_content = None
         if execution.html_output_path:
             try:
-                with open(execution.html_output_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
+                # Check if it's a relative path (new format)
+                if execution.html_output_path.startswith("executions/"):
+                    html_file_path = self.notebook_executor.output_path / execution.html_output_path
+                else:
+                    # Legacy absolute path
+                    html_file_path = Path(execution.html_output_path)
+                
+                if html_file_path.exists():
+                    with open(html_file_path, 'r', encoding='utf-8') as f:
+                        html_content = f.read()
+                else:
+                    html_content = f"HTML file not found: {html_file_path}"
             except Exception as e:
                 html_content = f"Error reading HTML file: {str(e)}"
         
@@ -152,49 +162,83 @@ class WebController(Controller):
         """View the latest execution result of a report."""
         from pathlib import Path
         
-        # Get report output directory
-        report_output_dir = self.notebook_executor.reports_output_path / report_name
-        
-        if not report_output_dir.exists():
-            return Template(
-                template_name="error.html",
-                context={
-                    "error": f"Report '{report_name}' not found or never executed",
-                    "request": request
-                }
-            )
-        
-        # Find the latest HTML file
-        html_files = list(report_output_dir.glob("*.html"))
-        if not html_files:
-            return Template(
-                template_name="error.html",
-                context={
-                    "error": f"No HTML output found for report '{report_name}'",
-                    "request": request
-                }
-            )
-        
-        # Get the most recent HTML file
-        latest_html = max(html_files, key=lambda f: f.stat().st_mtime)
-        
-        # Read HTML content
-        try:
-            with open(latest_html, 'r', encoding='utf-8') as f:
-                html_content = f.read()
-        except Exception as e:
-            html_content = f"Error reading HTML file: {str(e)}"
-        
-        # Get all files in the report directory
+        # First try to find in executions directory (new structure)
+        executions_dir = self.notebook_executor.executions_output_path / report_name
+        report_output_dir = None
+        html_content = None
         all_files = []
-        for file_path in report_output_dir.iterdir():
-            if file_path.is_file():
-                all_files.append({
-                    "name": file_path.name,
-                    "path": str(file_path),
-                    "size": file_path.stat().st_size,
-                    "modified": datetime.fromtimestamp(file_path.stat().st_mtime)
-                })
+        
+        if executions_dir.exists():
+            # Find the most recent execution directory
+            execution_dirs = [d for d in executions_dir.iterdir() if d.is_dir()]
+            if execution_dirs:
+                # Sort by date (most recent first)
+                execution_dirs.sort(key=lambda x: x.name, reverse=True)
+                latest_execution_dir = execution_dirs[0]
+                
+                # Find HTML files in the latest execution
+                html_files = list(latest_execution_dir.glob("*.html"))
+                if html_files:
+                    latest_html = max(html_files, key=lambda f: f.stat().st_mtime)
+                    try:
+                        with open(latest_html, 'r', encoding='utf-8') as f:
+                            html_content = f.read()
+                    except Exception as e:
+                        html_content = f"Error reading HTML file: {str(e)}"
+                
+                # Get all files in the execution directory
+                for file_path in latest_execution_dir.iterdir():
+                    if file_path.is_file():
+                        all_files.append({
+                            "name": file_path.name,
+                            "path": f"executions/{report_name}/{latest_execution_dir.name}/{file_path.name}",
+                            "size": file_path.stat().st_size,
+                            "modified": datetime.fromtimestamp(file_path.stat().st_mtime)
+                        })
+        
+        # Fallback to legacy report output directory
+        if not html_content:
+            report_output_dir = self.notebook_executor.reports_output_path / report_name
+            
+            if not report_output_dir.exists():
+                return Template(
+                    template_name="error.html",
+                    context={
+                        "error": f"Report '{report_name}' not found or never executed",
+                        "request": request
+                    }
+                )
+            
+            # Find the latest HTML file
+            html_files = list(report_output_dir.glob("*.html"))
+            if not html_files:
+                return Template(
+                    template_name="error.html",
+                    context={
+                        "error": f"No HTML output found for report '{report_name}'",
+                        "request": request
+                    }
+                )
+            
+            # Get the most recent HTML file
+            latest_html = max(html_files, key=lambda f: f.stat().st_mtime)
+            
+            # Read HTML content
+            try:
+                with open(latest_html, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+            except Exception as e:
+                html_content = f"Error reading HTML file: {str(e)}"
+            
+            # Get all files in the report directory
+            for file_path in report_output_dir.iterdir():
+                if file_path.is_file():
+                    all_files.append({
+                        "name": file_path.name,
+                        "path": str(file_path),
+                        "size": file_path.stat().st_size,
+                        "modified": datetime.fromtimestamp(file_path.stat().st_mtime)
+                    })
         
         return Template(
             template_name="report_result.html",
@@ -215,7 +259,30 @@ class WebController(Controller):
         """Download a file from a report output directory."""
         from pathlib import Path
         
-        # Get report output directory
+        # First try to find in executions directory (new structure)
+        executions_dir = self.notebook_executor.executions_output_path / report_name
+        if executions_dir.exists():
+            # Find the most recent execution directory
+            execution_dirs = [d for d in executions_dir.iterdir() if d.is_dir()]
+            if execution_dirs:
+                # Sort by date (most recent first)
+                execution_dirs.sort(key=lambda x: x.name, reverse=True)
+                latest_execution_dir = execution_dirs[0]
+                file_path = latest_execution_dir / filename
+                
+                if file_path.exists() and file_path.is_file():
+                    # Security check: ensure the file is within the execution directory
+                    try:
+                        file_path.resolve().relative_to(latest_execution_dir.resolve())
+                        return File(
+                            path=str(file_path),
+                            filename=filename,
+                            media_type="application/octet-stream"
+                        )
+                    except ValueError:
+                        pass  # Continue to legacy check
+        
+        # Fallback to legacy report output directory
         report_output_dir = self.notebook_executor.reports_output_path / report_name
         
         if not report_output_dir.exists():
@@ -230,6 +297,34 @@ class WebController(Controller):
         # Security check: ensure the file is within the report directory
         try:
             file_path.resolve().relative_to(report_output_dir.resolve())
+        except ValueError:
+            raise FileNotFoundError("Invalid file path")
+        
+        return File(
+            path=str(file_path),
+            filename=filename,
+            media_type="application/octet-stream"
+        )
+    
+    @get("/proxy-file/{report_name:str}/{execution_date:str}/{filename:str}")
+    async def proxy_file(
+        self,
+        report_name: str,
+        execution_date: str,
+        filename: str
+    ) -> File:
+        """Proxy download for files from execution directory."""
+        from pathlib import Path
+        
+        # Construct file path
+        file_path = self.notebook_executor.executions_output_path / report_name / execution_date / filename
+        
+        if not file_path.exists() or not file_path.is_file():
+            raise FileNotFoundError(f"File '{filename}' not found in execution '{execution_date}' for report '{report_name}'")
+        
+        # Security check: ensure the file is within the executions directory
+        try:
+            file_path.resolve().relative_to(self.notebook_executor.executions_output_path.resolve())
         except ValueError:
             raise FileNotFoundError("Invalid file path")
         

@@ -70,10 +70,25 @@
                                     {{ file.modified.strftime('%d.%m.%Y %H:%M') }}
                                 </td>
                                 <td>
+                                    {% if file.path.startswith('executions/') %}
+                                    {% set path_parts = file.path.split('/') %}
+                                    {% if path_parts|length >= 4 %}
+                                    <a href="/proxy-file/{{ path_parts[1] }}/{{ path_parts[2] }}/{{ path_parts[3] }}" 
+                                       class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-download"></i> Скачать
+                                    </a>
+                                    {% else %}
                                     <a href="/download/{{ report_name }}/{{ file.name }}" 
                                        class="btn btn-outline-primary btn-sm">
                                         <i class="bi bi-download"></i> Скачать
                                     </a>
+                                    {% endif %}
+                                    {% else %}
+                                    <a href="/download/{{ report_name }}/{{ file.name }}" 
+                                       class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-download"></i> Скачать
+                                    </a>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}

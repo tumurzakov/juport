@@ -22,10 +22,12 @@ class NotebookExecutor:
         self.notebooks_path = Path(settings.jupyter_notebooks_path)
         self.output_path = Path(settings.jupyter_output_path)
         self.reports_output_path = self.output_path / "reports"
+        self.executions_output_path = self.output_path / "executions"
         
         # Ensure output directories exist
         self.output_path.mkdir(parents=True, exist_ok=True)
         self.reports_output_path.mkdir(parents=True, exist_ok=True)
+        self.executions_output_path.mkdir(parents=True, exist_ok=True)
     
     async def execute_notebook(
         self, 
@@ -64,12 +66,18 @@ class NotebookExecutor:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         execution_id = f"{full_notebook_path.stem}_{timestamp}"
         
-        # Create temporary directory in system temp directory
+        # Create permanent execution directory with hierarchical structure
+        report_name = full_notebook_path.stem
+        execution_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        execution_output_dir = self.executions_output_path / report_name / execution_datetime
+        execution_output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created execution directory: {execution_output_dir}")
+        
+        # Create temporary directory in system temp directory for notebook execution
         temp_execution_dir = Path(tempfile.mkdtemp(prefix=f"juport_{execution_id}_"))
         logger.info(f"Created temporary execution directory: {temp_execution_dir}")
         
-        # Create permanent report directory
-        report_name = full_notebook_path.stem
+        # Create permanent report directory (for backward compatibility)
         report_output_dir = self.reports_output_path / report_name
         report_output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -130,7 +138,7 @@ class NotebookExecutor:
             # Collect all artifacts from temporary directory (including uploaded files)
             artifacts = self._collect_artifacts(temp_execution_dir, artifacts_config)
             
-            # Copy all generated files (except .ipynb) to permanent report directory
+            # Copy all generated files (except .ipynb) to permanent execution directory
             final_artifacts = []
             final_html_path = None
             
@@ -139,26 +147,37 @@ class NotebookExecutor:
                 if source_path.exists() and source_path.suffix != ".ipynb":
                     # Keep original filename as is
                     final_filename = source_path.name
-                    final_path = report_output_dir / final_filename
+                    execution_file_path = execution_output_dir / final_filename
                     
                     try:
-                        # Copy file to permanent location
-                        shutil.copy2(source_path, final_path)
-                        logger.info(f"Copied artifact: {source_path} -> {final_path}")
+                        # Copy file to permanent execution location
+                        shutil.copy2(source_path, execution_file_path)
+                        logger.info(f"Copied artifact: {source_path} -> {execution_file_path}")
                         
-                        # Update artifact info
+                        # Update artifact info with relative path for web access
                         final_artifact = artifact.copy()
-                        final_artifact["path"] = str(final_path)
+                        final_artifact["path"] = f"executions/{report_name}/{execution_datetime}/{final_filename}"
                         final_artifact["name"] = final_filename
                         final_artifacts.append(final_artifact)
                         
                         # Track HTML file
                         if source_path.suffix == ".html":
-                            final_html_path = str(final_path)
+                            final_html_path = f"executions/{report_name}/{execution_datetime}/{final_filename}"
                             
                     except Exception as e:
                         logger.error(f"Failed to copy artifact {source_path}: {e}")
                         # Don't add to final_artifacts if copy failed
+            
+            # Also copy to legacy report directory for backward compatibility
+            for artifact in final_artifacts:
+                source_path = Path(artifact["path"].replace("executions/", str(self.executions_output_path) + "/"))
+                if source_path.exists():
+                    legacy_path = report_output_dir / source_path.name
+                    try:
+                        shutil.copy2(source_path, legacy_path)
+                        logger.info(f"Copied to legacy location: {source_path} -> {legacy_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to copy to legacy location {legacy_path}: {e}")
             
             # Prepare result
             result = {
@@ -166,7 +185,8 @@ class NotebookExecutor:
                 "artifacts": final_artifacts,
                 "log": stdout.decode() if stdout else "",
                 "execution_id": execution_id,
-                "output_dir": str(report_output_dir)
+                "output_dir": str(execution_output_dir),
+                "execution_datetime": execution_datetime
             }
             
             logger.info(f"Notebook execution completed: {execution_id}")

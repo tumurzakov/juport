@@ -104,19 +104,19 @@
                                             <i class="bi bi-three-dots-vertical"></i>
                                         </button>
                                         <ul class="dropdown-menu">
-                                            <li><a class="dropdown-item" href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" download="{{ artifact.name }}">
+                                            <li><a class="dropdown-item" href="/proxy-file/{{ execution.report.name }}/{{ execution.started_at.strftime('%Y-%m-%d_%H-%M-%S') }}/{{ artifact.name }}" download="{{ artifact.name }}">
                                                 <i class="bi bi-download"></i> Скачать
                                             </a></li>
                                             {% if artifact.type in ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml'] %}
-                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'image')">
+                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path }}', '{{ artifact.name }}', 'image')">
                                                 <i class="bi bi-eye"></i> Просмотр
                                             </a></li>
                                             {% elif artifact.type == 'text/csv' %}
-                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'csv')">
+                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path }}', '{{ artifact.name }}', 'csv')">
                                                 <i class="bi bi-table"></i> Просмотр
                                             </a></li>
                                             {% elif artifact.type == 'text/html' %}
-                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'html')">
+                                            <li><a class="dropdown-item" href="#" onclick="previewFile('{{ artifact.path }}', '{{ artifact.name }}', 'html')">
                                                 <i class="bi bi-file-earmark-code"></i> Просмотр
                                             </a></li>
                                             {% endif %}
@@ -142,7 +142,7 @@
                                             <i class="bi bi-file-earmark"></i> {{ artifact.type }}
                                         {% endif %}
                                     </small>
-                                    <a href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" 
+                                    <a href="/proxy-file/{{ execution.report.name }}/{{ execution.started_at.strftime('%Y-%m-%d_%H-%M-%S') }}/{{ artifact.name }}" 
                                        class="btn btn-sm btn-primary" 
                                        download="{{ artifact.name }}">
                                         <i class="bi bi-download"></i>
@@ -189,21 +189,21 @@
                                 <td>{{ artifact.description or '-' }}</td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
-                                        <a href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" 
+                                        <a href="/proxy-file/{{ execution.report.name }}/{{ execution.started_at.strftime('%Y-%m-%d_%H-%M-%S') }}/{{ artifact.name }}" 
                                            class="btn btn-outline-primary" 
                                            download="{{ artifact.name }}">
                                             <i class="bi bi-download"></i>
                                         </a>
                                         {% if artifact.type in ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml'] %}
-                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'image')">
+                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path }}', '{{ artifact.name }}', 'image')">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         {% elif artifact.type == 'text/csv' %}
-                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'csv')">
+                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path }}', '{{ artifact.name }}', 'csv')">
                                             <i class="bi bi-table"></i>
                                         </button>
                                         {% elif artifact.type == 'text/html' %}
-                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path | replace('/app/outputs/', '') }}', '{{ artifact.name }}', 'html')">
+                                        <button class="btn btn-outline-secondary" onclick="previewFile('{{ artifact.path }}', '{{ artifact.name }}', 'html')">
                                             <i class="bi bi-file-earmark-code"></i>
                                         </button>
                                         {% endif %}
@@ -264,7 +264,7 @@
                                     <small class="text-muted">- {{ artifact.description }}</small>
                                 {% endif %}
                             </span>
-                            <a href="/api/files/{{ artifact.path | replace('/app/outputs/', '') }}" 
+                            <a href="/proxy-file/{{ execution.report.name }}/{{ execution.started_at.strftime('%Y-%m-%d_%H-%M-%S') }}/{{ artifact.name }}" 
                                class="btn btn-sm btn-outline-primary" 
                                download="{{ artifact.name }}">
                                 <i class="bi bi-download"></i> Скачать
@@ -655,7 +655,13 @@ function downloadAllFiles() {
     // For now, we'll download them one by one with a small delay
     artifacts.forEach((artifact, index) => {
         setTimeout(() => {
-            downloadFile(artifact.path.replace('/app/outputs/', ''), artifact.name);
+            const reportName = document.querySelector('[data-report-name]')?.dataset.reportName || 'unknown';
+            const startedAt = document.querySelector('[data-started-at]')?.dataset.startedAt || 'unknown';
+            // Convert startedAt from DD.MM.YYYY HH:MM:SS to YYYY-MM-DD_HH-MM-SS
+            const dateParts = startedAt.split(' ')[0].split('.');
+            const timeParts = startedAt.split(' ')[1].split(':');
+            const executionDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}_${timeParts[0]}-${timeParts[1]}-${timeParts[2]}`;
+            downloadFile(`/proxy-file/${reportName}/${executionDate}/${artifact.name}`, artifact.name);
         }, index * 500); // 500ms delay between downloads
     });
     
