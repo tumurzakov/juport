@@ -34,7 +34,8 @@ class NotebookExecutor:
         notebook_path: str, 
         variables: Dict[str, Any],
         artifacts_config: Dict[str, Any],
-        task_id: Optional[int] = None
+        task_id: Optional[int] = None,
+        execution_datetime: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Execute a Jupyter notebook and return results.
@@ -68,7 +69,8 @@ class NotebookExecutor:
         
         # Create permanent execution directory with hierarchical structure
         report_name = full_notebook_path.stem
-        execution_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        if execution_datetime is None:
+            execution_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         execution_output_dir = self.executions_output_path / report_name / execution_datetime
         execution_output_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created execution directory: {execution_output_dir}")

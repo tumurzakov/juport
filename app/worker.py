@@ -20,6 +20,7 @@ class TaskWorker:
         self.executor = NotebookExecutor()
         self.running = False
         self._task = None
+        self.active_tasks = set()  # Track actively running task IDs
     
     async def start(self):
         """Start the worker task."""
@@ -49,12 +50,47 @@ class TaskWorker:
         """Main worker loop."""
         while self.running:
             try:
+                # First, check for stuck tasks and mark them as failed
+                await self._check_stuck_tasks()
+                # Then process next task
                 await self._process_next_task()
                 # Small delay to prevent busy waiting
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Error in worker loop: {e}")
                 await asyncio.sleep(5)  # Wait longer on error
+    
+    async def _check_stuck_tasks(self):
+        """Check for tasks that are marked as running but not actually being processed."""
+        async with async_session_factory() as session:
+            # Get all tasks marked as running
+            result = await session.execute(
+                select(Task).where(Task.status == "running")
+            )
+            running_tasks = result.scalars().all()
+            
+            for task in running_tasks:
+                # If task is not in our active_tasks set, it's stuck
+                if task.id not in self.active_tasks:
+                    logger.warning(f"Found stuck task {task.id}, marking as failed")
+                    task.status = "failed"
+                    task.error_message = "Task was stuck in running state, likely due to worker restart"
+                    task.completed_at = datetime.now()
+                    
+                    # Also update associated report execution if exists
+                    if task.report_execution_id:
+                        result = await session.execute(
+                            select(ReportExecution).where(ReportExecution.id == task.report_execution_id)
+                        )
+                        report_execution = result.scalar_one_or_none()
+                        if report_execution:
+                            report_execution.status = "failed"
+                            report_execution.error_message = "Task was stuck in running state"
+                            report_execution.completed_at = datetime.now()
+            
+            if running_tasks:
+                await session.commit()
+                logger.info(f"Checked {len(running_tasks)} running tasks, marked stuck ones as failed")
     
     async def _process_next_task(self):
         """Process the next pending task."""
@@ -81,17 +117,22 @@ class TaskWorker:
         """Execute a single task."""
         logger.info(f"Starting task {task.id} for report {task.report.name}")
         
-        # Update task status to running
-        task.status = "running"
-        task.started_at = datetime.now()
-        await session.commit()
+        # Add task to active tasks set
+        self.active_tasks.add(task.id)
         
         try:
+            # Update task status to running
+            # Create execution time once and use it for both DB and folder
+            execution_time = datetime.now()
+            
+            task.status = "running"
+            task.started_at = execution_time
+            await session.commit()
             # Create report execution record
             report_execution = ReportExecution(
                 report_id=task.report_id,
                 status="running",
-                started_at=datetime.now()
+                started_at=execution_time
             )
             session.add(report_execution)
             await session.commit()
@@ -103,11 +144,14 @@ class TaskWorker:
             
             # Execute the notebook
             logger.info(f"Executing notebook with artifacts_config: {task.report.artifacts_config}")
+            # Format execution_time to match execution directory format
+            execution_datetime = execution_time.strftime("%Y-%m-%d_%H-%M-%S")
             result = await self.executor.execute_notebook(
                 task.report.notebook_path,
                 task.report.variables or {},
                 task.report.artifacts_config or {},
-                task_id=task.id
+                task_id=task.id,
+                execution_datetime=execution_datetime
             )
             logger.info(f"Notebook execution result: artifacts={len(result.get('artifacts', []))}, html_path={result.get('html_path')}")
             
@@ -153,6 +197,10 @@ class TaskWorker:
                     report_execution.error_message = str(e)
             
             await session.commit()
+        
+        finally:
+            # Remove task from active tasks set
+            self.active_tasks.discard(task.id)
     
     async def get_task_status(self, task_id: int) -> Optional[Task]:
         """Get task status by ID."""

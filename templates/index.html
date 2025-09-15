@@ -48,8 +48,9 @@
                             <td>
                                 <small class="text-muted">
                                     {% if report.executions %}
-                                        {% set last_execution = report.executions | sort(attribute='completed_at', reverse=true) | first %}
-                                        {% if last_execution and last_execution.completed_at %}
+                                        {% set completed_executions = report.executions | selectattr('completed_at') | list %}
+                                        {% if completed_executions %}
+                                            {% set last_execution = completed_executions | sort(attribute='completed_at', reverse=true) | first %}
                                             <i class="bi bi-calendar-check"></i> {{ last_execution.completed_at.strftime('%d.%m.%Y %H:%M') }}
                                         {% else %}
                                             <i class="bi bi-hourglass-split"></i> В процессе

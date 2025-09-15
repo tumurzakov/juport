@@ -315,11 +315,19 @@ class WebController(Controller):
     ) -> File:
         """Proxy download for files from execution directory."""
         from pathlib import Path
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Proxy file request: report_name='{report_name}', execution_date='{execution_date}', filename='{filename}'")
         
         # Construct file path
         file_path = self.notebook_executor.executions_output_path / report_name / execution_date / filename
+        logger.info(f"Constructed file path: {file_path}")
+        logger.info(f"File exists: {file_path.exists()}")
+        logger.info(f"Is file: {file_path.is_file()}")
         
         if not file_path.exists() or not file_path.is_file():
+            logger.warning(f"File not found: {file_path}")
             raise FileNotFoundError(f"File '{filename}' not found in execution '{execution_date}' for report '{report_name}'")
         
         # Security check: ensure the file is within the executions directory

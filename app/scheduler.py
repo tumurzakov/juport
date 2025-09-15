@@ -121,21 +121,27 @@ class Scheduler:
         """Run a specific report (legacy method for backward compatibility)."""
         logger.info(f"Starting execution of report: {report.name}")
         
+        # Create execution time once and use it for both DB and folder
+        execution_time = datetime.now()
+        
         # Create execution record
         execution = ReportExecution(
             report_id=report.id,
             status="running",
-            started_at=datetime.now()
+            started_at=execution_time
         )
         session.add(execution)
         await session.commit()
         
         try:
             # Execute the notebook
+            # Format execution_time to match execution directory format
+            execution_datetime = execution_time.strftime("%Y-%m-%d_%H-%M-%S")
             result = await self.executor.execute_notebook(
                 report.notebook_path,
                 report.variables or {},
-                report.artifacts_config or {}
+                report.artifacts_config or {},
+                execution_datetime=execution_datetime
             )
             
             # Update execution record with results
