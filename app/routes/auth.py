@@ -71,13 +71,17 @@ class AuthController(Controller):
             
             # Set session cookie and redirect
             response = Redirect("/")
+            # Use request scheme to decide on secure flag to avoid losing the
+            # cookie when the app is served over plain HTTP in non-debug envs.
+            cookie_secure = request.url.scheme == "https"
             response.set_cookie(
                 "session_id",
                 session_id,
                 max_age=86400,  # 24 hours
                 httponly=True,
-                secure=not settings.debug,
-                samesite="lax"
+                secure=cookie_secure,
+                samesite="lax",
+                path="/",
             )
             
             logger.info(f"User {username} logged in successfully")
